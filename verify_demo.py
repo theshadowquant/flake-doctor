@@ -27,7 +27,12 @@ if not report_path.exists():
     print("FAIL: autopsy_report.json not found")
     sys.exit(1)
 
-data = json.loads(report_path.read_text(encoding="utf-8"))
+raw_data = json.loads(report_path.read_text(encoding="utf-8"))
+if isinstance(raw_data, dict) and "results" in raw_data:
+    data = raw_data["results"]
+else:
+    data = raw_data
+
 reports = {r["name"]: r for r in data}
 
 all_pass = True

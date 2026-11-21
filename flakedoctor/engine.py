@@ -8,24 +8,25 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from rich.console import Console
 from rich.status import Status
 
 from .ast_analyzer import AstFinding, analyze_test
 
-console = Console()
+console = Console(width=140)
 
 # ---------------------------------------------------------------------------
 # Seeds (verified: seeds 7 and 42 give mean <= 0.42; others give > 0.42)
 # ---------------------------------------------------------------------------
 SEEDS = [0, 1, 7, 42, 99, 1337, 2026, 9999]
-PASS_SEED = 0  # mean > 0.42 → test_03 passes when seeded with this
+PASS_SEED = 0  # mean > 0.42 -> test_03 passes when seeded with this
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -37,7 +38,7 @@ class TestReport:
     verdict: str
     root_cause: str
     culprit: Optional[str]
-    fail_rate: float
+    sweep_fail_rate: float
     runs: int
     findings: List[AstFinding] = field(default_factory=list)
     confidence_runs: Optional[int] = None
@@ -48,7 +49,7 @@ class TestReport:
             "verdict": self.verdict,
             "root_cause": self.root_cause,
             "culprit": self.culprit,
-            "fail_rate": self.fail_rate,
+            "sweep_fail_rate": self.sweep_fail_rate,
             "runs": self.runs,
             "findings": [
                 {
@@ -74,16 +75,14 @@ def pytest_configure(config):
     stress = os.environ.get("FD_STRESS")
     if stress is not None:
         i = int(stress)
-        n_workers = max(2, (os.cpu_count() or 2))
         import threading, time as _t
         def _burn():
             while True:
-                _ = sum(range(10000))
-                _t.sleep(0)
-        for _ in range(n_workers):
-            th = threading.Thread(target=_burn, daemon=True)
-            th.start()
-        sys.setswitchinterval(0.005)
+                _ = sum(range(1000))
+                _t.sleep(0.001)
+        th = threading.Thread(target=_burn, daemon=True)
+        th.start()
+        sys.setswitchinterval(0.01)
         _orig_sleep = _t.sleep
         _main_thread_id = threading.main_thread().ident
         def _patched_sleep(seconds):
@@ -118,12 +117,11 @@ def _write_plugin(tmpdir: Path) -> None:
 def _build_env(env_extra: Dict[str, str]) -> Dict[str, str]:
     env = os.environ.copy()
     env.update(env_extra)
-    # Ensure PYTHONPATH includes the tmpdir (set by caller)
     return env
 
 
 def _parse_junit(xml_path: Path) -> Dict[str, bool]:
-    """Parse JUnit XML → {test_name: passed (True) or failed (False)}."""
+    """Parse JUnit XML -> {test_name: passed (True) or failed (False)}."""
     result: Dict[str, bool] = {}
     if not xml_path.exists():
         return result
@@ -132,12 +130,10 @@ def _parse_junit(xml_path: Path) -> Dict[str, bool]:
     except ET.ParseError:
         return result
     root = tree.getroot()
-    # May be <testsuites><testsuite>... or just <testsuite>...
     suites = root.findall(".//testsuite") or [root]
     for suite in suites:
         for tc in suite.findall("testcase"):
             name = tc.get("name", "")
-            # Strip class prefix if present (e.g. "test_01_setup_cache" or "ClassName::test_01_setup_cache")
             if "::" in name:
                 name = name.split("::")[-1]
             failed = tc.find("failure") is not None or tc.find("error") is not None
@@ -150,11 +146,10 @@ def _run_pytest(
     env_extra: Dict[str, str],
     plugin_dir: Path,
     project_root: Path,
-) -> Dict[str, bool]:
-    """Run pytest on the given node ids, return {test_name: passed}."""
+) -> Tuple[Dict[str, bool], bool]:
+    """Run pytest on the given node ids, return ({test_name: passed}, timed_out)."""
     xml_path = plugin_dir / f"result_{uuid.uuid4().hex[:8]}.xml"
     env = _build_env(env_extra)
-    # Inject plugin dir on PYTHONPATH
     existing_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = str(plugin_dir) + (os.pathsep + existing_pp if existing_pp else "")
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
@@ -177,9 +172,9 @@ def _run_pytest(
             stderr=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired:
-        return {}
+        return {}, True
 
-    return _parse_junit(xml_path)
+    return _parse_junit(xml_path), False
 
 
 def required_clean_runs(p: float) -> Optional[int]:
@@ -204,8 +199,7 @@ def _bisect_polluter(
     candidates = list(predecessors)
 
     def run_with(prefix: List[str]) -> bool:
-        """Return True if [prefix..., target] run makes target pass."""
-        result = _run_pytest(prefix + [target_nodeid], env_extra, plugin_dir, project_root)
+        result, _ = _run_pytest(prefix + [target_nodeid], env_extra, plugin_dir, project_root)
         target_name = target_nodeid.split("::")[-1]
         return result.get(target_name, False)
 
@@ -218,15 +212,13 @@ def _bisect_polluter(
         elif half_b and run_with(half_b):
             candidates = half_b
         else:
-            break  # can't narrow further; report remaining set
+            break
 
     if len(candidates) == 1:
-        # Confirm
         ok = run_with(candidates)
         if ok:
             return candidates[0].split("::")[-1]
 
-    # Return best guess (last remaining)
     return candidates[0].split("::")[-1] if candidates else None
 
 
@@ -237,11 +229,8 @@ def _bisect_polluter(
 def diagnose(test_file: str | Path) -> List[TestReport]:
     test_file = Path(test_file).resolve()
     project_root = Path.cwd()
-
-    # Build node id prefix using absolute path
     abs_path = str(test_file)
 
-    # Collect test names in file order
     import ast as _ast
     src = test_file.read_text(encoding="utf-8")
     tree = _ast.parse(src, filename=str(test_file))
@@ -259,37 +248,38 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
 
     all_nodeids = [nodeid(n) for n in test_names]
 
-    # Temp dir for plugin + junit files
     tmpdir = Path(tempfile.mkdtemp(prefix="fd_"))
+    subprocess_count = 0
+    t_start = time.monotonic()
+
     try:
         _write_plugin(tmpdir)
-
         base_env = {"FD_SEED": str(PASS_SEED)}
 
         # ----------------------------------------------------------------
-        # 1. Suite baseline: 3 runs, whole file, file order, FD_SEED=PASS_SEED
+        # 1. Suite baseline: 3 runs
         # ----------------------------------------------------------------
         with Status("[bold blue]Step 1/5: Suite baseline...", console=console):
             suite_pass_counts: Dict[str, int] = {n: 0 for n in test_names}
             for _ in range(3):
-                r = _run_pytest(all_nodeids, base_env, tmpdir, project_root)
+                r, _ = _run_pytest(all_nodeids, base_env, tmpdir, project_root)
+                subprocess_count += 1
                 for name in test_names:
                     if r.get(name, False):
                         suite_pass_counts[name] += 1
-            # passes_in_suite: passed ALL 3 suite runs
             passes_in_suite = {n: (suite_pass_counts[n] == 3) for n in test_names}
 
         # ----------------------------------------------------------------
-        # 2. Isolated baseline: 3 runs of each test alone, FD_SEED=PASS_SEED
+        # 2. Isolated baseline: 3 runs each
         # ----------------------------------------------------------------
         with Status("[bold blue]Step 2/5: Isolated baseline...", console=console):
             isolated_fail_counts: Dict[str, int] = {n: 0 for n in test_names}
             for name in test_names:
                 for _ in range(3):
-                    r = _run_pytest([nodeid(name)], base_env, tmpdir, project_root)
+                    r, _ = _run_pytest([nodeid(name)], base_env, tmpdir, project_root)
+                    subprocess_count += 1
                     if not r.get(name, False):
                         isolated_fail_counts[name] += 1
-            # fails_isolated: failed ALL 3 isolated runs
             fails_isolated = {n: (isolated_fail_counts[n] == 3) for n in test_names}
 
         # ----------------------------------------------------------------
@@ -298,31 +288,33 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
         with Status("[bold blue]Step 3/5: Seed sweep...", console=console):
             seed_fail_counts: Dict[str, int] = {n: 0 for n in test_names}
             for seed in SEEDS:
-                r = _run_pytest(all_nodeids, {"FD_SEED": str(seed)}, tmpdir, project_root)
+                r, _ = _run_pytest(all_nodeids, {"FD_SEED": str(seed)}, tmpdir, project_root)
+                subprocess_count += 1
                 for name in test_names:
                     if not r.get(name, False):
                         seed_fail_counts[name] += 1
             seed_fail_rate = {n: seed_fail_counts[n] / len(SEEDS) for n in test_names}
 
         # ----------------------------------------------------------------
-        # 4. Stress jitter: 6 stress levels, FD_SEED=PASS_SEED
+        # 4. Stress jitter: 6 stress levels
         # ----------------------------------------------------------------
         with Status("[bold blue]Step 4/5: Stress jitter...", console=console):
             stress_fail_counts: Dict[str, int] = {n: 0 for n in test_names}
             for i in range(6):
-                r = _run_pytest(
+                r, _ = _run_pytest(
                     all_nodeids,
                     {"FD_STRESS": str(i), "FD_SEED": str(PASS_SEED)},
                     tmpdir,
                     project_root,
                 )
+                subprocess_count += 1
                 for name in test_names:
                     if not r.get(name, False):
                         stress_fail_counts[name] += 1
             stress_fail_rate = {n: stress_fail_counts[n] / 6 for n in test_names}
 
         # ----------------------------------------------------------------
-        # 5. Order/state bisect for order-dependent tests
+        # 5. Order/state bisect
         # ----------------------------------------------------------------
         with Status("[bold blue]Step 5/5: Order bisect...", console=console):
             culprit_map: Dict[str, Optional[str]] = {}
@@ -333,6 +325,7 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                         nodeid(name), predecessors, base_env, tmpdir, project_root
                     )
                     culprit_map[name] = culprit
+                    subprocess_count += max(1, len(predecessors))
                 else:
                     culprit_map[name] = None
 
@@ -347,20 +340,17 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
             stfr = stress_fail_rate[name]
             culprit = culprit_map.get(name)
 
-            # Total failures across all runs (suite + isolated)
-            suite_failed_all = not ps  # failed in ALL suite runs
-            # BROKEN_BUILD: fails suite (all 3), fails isolated (all 3), fails all sweeps
             is_broken = (
-                (suite_pass_counts[name] == 0)   # failed all suite runs
-                and fi                            # failed all isolated runs
-                and seed_fail_counts[name] == len(SEEDS)  # failed all seed runs
-                and stress_fail_counts[name] == 6         # failed all stress runs
+                (suite_pass_counts[name] == 0)
+                and fi
+                and seed_fail_counts[name] == len(SEEDS)
+                and stress_fail_counts[name] == 6
             )
 
             if is_broken:
                 verdict = "BROKEN_BUILD"
                 root_cause = "Test fails unconditionally in all execution modes"
-                fail_rate = 1.0
+                sweep_fail_rate = 1.0
                 total_runs = 3 + 3 + len(SEEDS) + 6
                 conf = None
             elif ps and fi:
@@ -369,29 +359,28 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                     f"Passes only when preceded by {culprit}; "
                     "relies on shared state set by that test"
                 )
-                fail_rate = isolated_fail_counts[name] / 3
+                sweep_fail_rate = isolated_fail_counts[name] / 3
                 total_runs = 3 + 3
                 conf = None
             elif 0 < sfr < 1.0:
                 verdict = "FLAKY_PRNG"
                 root_cause = "Non-deterministic randomness: different seeds flip pass/fail"
-                fail_rate = sfr
+                sweep_fail_rate = sfr
                 total_runs = len(SEEDS)
                 conf = required_clean_runs(sfr)
             elif 0 < stfr < 1.0:
                 verdict = "FLAKY_TIMING"
                 root_cause = "Timing-sensitive: thread scheduling variability flips pass/fail"
-                fail_rate = stfr
+                sweep_fail_rate = stfr
                 total_runs = 6
                 conf = required_clean_runs(stfr)
             else:
                 verdict = "STABLE"
                 root_cause = "No flakiness detected"
-                fail_rate = 0.0
+                sweep_fail_rate = 0.0
                 total_runs = 3 + 3 + len(SEEDS) + 6
                 conf = None
 
-            # AST analysis: for ORDER_DEPENDENT, analyze culprit predecessor
             if verdict == "ORDER_DEPENDENT" and culprit:
                 findings = analyze_test(test_file, culprit)
             else:
@@ -402,15 +391,13 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                 verdict=verdict,
                 root_cause=root_cause,
                 culprit=culprit,
-                fail_rate=fail_rate,
+                sweep_fail_rate=sweep_fail_rate,
                 runs=total_runs,
                 findings=findings,
                 confidence_runs=conf,
             ))
 
-        # ----------------------------------------------------------------
         # Post-pass: POLLUTER promotion
-        # ----------------------------------------------------------------
         order_dep_culprits = {
             r.culprit for r in reports if r.verdict == "ORDER_DEPENDENT" and r.culprit
         }
@@ -418,6 +405,12 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
             if r.verdict == "STABLE" and r.name in order_dep_culprits:
                 r.verdict = "POLLUTER"
                 r.root_cause = "Pollutes shared state depended on by downstream test(s)"
+
+        elapsed = time.monotonic() - t_start
+        # Attach stats to each report so CLI can display them
+        for r in reports:
+            r._scan_elapsed = elapsed          # type: ignore[attr-defined]
+            r._subprocess_count = subprocess_count  # type: ignore[attr-defined]
 
         return reports
 

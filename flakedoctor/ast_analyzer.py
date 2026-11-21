@@ -99,8 +99,8 @@ def analyze_test(source_path: str | Path, func_name: str) -> List[AstFinding]:
                         category="UNSEEDED_PRNG",
                         code_snippet=snippet,
                         prescription=(
-                            "Add random.seed(42) or np.random.default_rng(42) before sampling; "
-                            "increase sample size or use a tolerance-based assertion."
+                            "Seeding makes the test reproducible, not correct. "
+                            "Also increase the sample size or assert with a tolerance."
                         ),
                     ))
 

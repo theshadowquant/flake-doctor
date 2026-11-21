@@ -1,98 +1,102 @@
-[
-  {
-    "name": "test_01_setup_cache",
-    "verdict": "POLLUTER",
-    "root_cause": "Pollutes shared state depended on by downstream test(s)",
-    "culprit": null,
-    "fail_rate": 0.0,
-    "runs": 20,
-    "findings": [
-      {
-        "line": 14,
-        "category": "STATE_POLLUTION",
-        "code_snippet": "SHARED_CACHE[\"initialized\"] = True",
-        "prescription": "Use monkeypatch.setitem() to avoid mutating shared module-level state across tests."
-      },
-      {
-        "line": 15,
-        "category": "STATE_POLLUTION",
-        "code_snippet": "os.environ[\"FLAKY_MODE\"] = \"ACTIVE\"",
-        "prescription": "Use monkeypatch.setenv() or monkeypatch.setitem() to avoid leaking environment changes to other tests."
-      }
-    ],
-    "confidence_runs": null
-  },
-  {
-    "name": "test_02_order_dependent_consumer",
-    "verdict": "ORDER_DEPENDENT",
-    "root_cause": "Passes only when preceded by test_01_setup_cache; relies on shared state set by that test",
-    "culprit": "test_01_setup_cache",
-    "fail_rate": 1.0,
-    "runs": 6,
-    "findings": [
-      {
-        "line": 14,
-        "category": "STATE_POLLUTION",
-        "code_snippet": "SHARED_CACHE[\"initialized\"] = True",
-        "prescription": "Use monkeypatch.setitem() to avoid mutating shared module-level state across tests."
-      },
-      {
-        "line": 15,
-        "category": "STATE_POLLUTION",
-        "code_snippet": "os.environ[\"FLAKY_MODE\"] = \"ACTIVE\"",
-        "prescription": "Use monkeypatch.setenv() or monkeypatch.setitem() to avoid leaking environment changes to other tests."
-      }
-    ],
-    "confidence_runs": null
-  },
-  {
-    "name": "test_03_unseeded_ml_threshold",
-    "verdict": "FLAKY_PRNG",
-    "root_cause": "Non-deterministic randomness: different seeds flip pass/fail",
-    "culprit": null,
-    "fail_rate": 0.25,
-    "runs": 8,
-    "findings": [
-      {
-        "line": 23,
-        "category": "UNSEEDED_PRNG",
-        "code_snippet": "values = [random.random() for _ in range(10)]",
-        "prescription": "Add random.seed(42) or np.random.default_rng(42) before sampling; increase sample size or use a tolerance-based assertion."
-      }
-    ],
-    "confidence_runs": 17
-  },
-  {
-    "name": "test_04_async_race_condition",
-    "verdict": "FLAKY_TIMING",
-    "root_cause": "Timing-sensitive: thread scheduling variability flips pass/fail",
-    "culprit": null,
-    "fail_rate": 0.5,
-    "runs": 6,
-    "findings": [
-      {
-        "line": 31,
-        "category": "TIMING_RACE",
-        "code_snippet": "time.sleep(0.005)",
-        "prescription": "Replace time.sleep with thread.join(timeout=2.0) or threading.Event.wait()."
-      },
-      {
-        "line": 36,
-        "category": "TIMING_RACE",
-        "code_snippet": "time.sleep(0.035)",
-        "prescription": "Replace time.sleep with thread.join(timeout=2.0) or threading.Event.wait()."
-      }
-    ],
-    "confidence_runs": 7
-  },
-  {
-    "name": "test_05_broken_build_control",
-    "verdict": "BROKEN_BUILD",
-    "root_cause": "Test fails unconditionally in all execution modes",
-    "culprit": null,
-    "fail_rate": 1.0,
-    "runs": 20,
-    "findings": [],
-    "confidence_runs": null
-  }
-]
+{
+  "generated_at": "2026-11-21T07:07:20.702590+00:00",
+  "test_file": "demo_sick_repo\\test_patient_zero.py",
+  "results": [
+    {
+      "name": "test_01_setup_cache",
+      "verdict": "POLLUTER",
+      "root_cause": "Pollutes shared state depended on by downstream test(s)",
+      "culprit": null,
+      "sweep_fail_rate": 0.0,
+      "runs": 20,
+      "findings": [
+        {
+          "line": 14,
+          "category": "STATE_POLLUTION",
+          "code_snippet": "SHARED_CACHE[\"initialized\"] = True",
+          "prescription": "Use monkeypatch.setitem() to avoid mutating shared module-level state across tests."
+        },
+        {
+          "line": 15,
+          "category": "STATE_POLLUTION",
+          "code_snippet": "os.environ[\"FLAKY_MODE\"] = \"ACTIVE\"",
+          "prescription": "Use monkeypatch.setenv() or monkeypatch.setitem() to avoid leaking environment changes to other tests."
+        }
+      ],
+      "confidence_runs": null
+    },
+    {
+      "name": "test_02_order_dependent_consumer",
+      "verdict": "ORDER_DEPENDENT",
+      "root_cause": "Passes only when preceded by test_01_setup_cache; relies on shared state set by that test",
+      "culprit": "test_01_setup_cache",
+      "sweep_fail_rate": 1.0,
+      "runs": 6,
+      "findings": [
+        {
+          "line": 14,
+          "category": "STATE_POLLUTION",
+          "code_snippet": "SHARED_CACHE[\"initialized\"] = True",
+          "prescription": "Use monkeypatch.setitem() to avoid mutating shared module-level state across tests."
+        },
+        {
+          "line": 15,
+          "category": "STATE_POLLUTION",
+          "code_snippet": "os.environ[\"FLAKY_MODE\"] = \"ACTIVE\"",
+          "prescription": "Use monkeypatch.setenv() or monkeypatch.setitem() to avoid leaking environment changes to other tests."
+        }
+      ],
+      "confidence_runs": null
+    },
+    {
+      "name": "test_03_unseeded_ml_threshold",
+      "verdict": "FLAKY_PRNG",
+      "root_cause": "Non-deterministic randomness: different seeds flip pass/fail",
+      "culprit": null,
+      "sweep_fail_rate": 0.25,
+      "runs": 8,
+      "findings": [
+        {
+          "line": 23,
+          "category": "UNSEEDED_PRNG",
+          "code_snippet": "values = [random.random() for _ in range(10)]",
+          "prescription": "Seeding makes the test reproducible, not correct. Also increase the sample size or assert with a tolerance."
+        }
+      ],
+      "confidence_runs": 17
+    },
+    {
+      "name": "test_04_async_race_condition",
+      "verdict": "FLAKY_TIMING",
+      "root_cause": "Timing-sensitive: thread scheduling variability flips pass/fail",
+      "culprit": null,
+      "sweep_fail_rate": 0.5,
+      "runs": 6,
+      "findings": [
+        {
+          "line": 31,
+          "category": "TIMING_RACE",
+          "code_snippet": "time.sleep(0.005)",
+          "prescription": "Replace time.sleep with thread.join(timeout=2.0) or threading.Event.wait()."
+        },
+        {
+          "line": 36,
+          "category": "TIMING_RACE",
+          "code_snippet": "time.sleep(0.035)",
+          "prescription": "Replace time.sleep with thread.join(timeout=2.0) or threading.Event.wait()."
+        }
+      ],
+      "confidence_runs": 7
+    },
+    {
+      "name": "test_05_broken_build_control",
+      "verdict": "BROKEN_BUILD",
+      "root_cause": "Test fails unconditionally in all execution modes",
+      "culprit": null,
+      "sweep_fail_rate": 1.0,
+      "runs": 20,
+      "findings": [],
+      "confidence_runs": null
+    }
+  ]
+}
