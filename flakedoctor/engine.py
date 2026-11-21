@@ -74,15 +74,16 @@ def pytest_configure(config):
     stress = os.environ.get("FD_STRESS")
     if stress is not None:
         i = int(stress)
-        n_workers = (os.cpu_count() or 2) * 2
+        n_workers = max(2, (os.cpu_count() or 2))
         import threading, time as _t
         def _burn():
             while True:
-                _ = sum(range(100000))
+                _ = sum(range(10000))
+                _t.sleep(0)
         for _ in range(n_workers):
             th = threading.Thread(target=_burn, daemon=True)
             th.start()
-        sys.setswitchinterval(0.05)
+        sys.setswitchinterval(0.005)
         _orig_sleep = _t.sleep
         _main_thread_id = threading.main_thread().ident
         def _patched_sleep(seconds):
@@ -172,7 +173,8 @@ def _run_pytest(
             env=env,
             cwd=str(project_root),
             timeout=120,
-            capture_output=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired:
         return {}
