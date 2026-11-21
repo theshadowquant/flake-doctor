@@ -1,6 +1,7 @@
 """Flake Doctor Live Local Web Dashboard.
 
 Zero external dependencies - built entirely on Python standard library http.server.
+Bespoke editorial studio design system with warm peach-sand-sage palette.
 """
 from __future__ import annotations
 
@@ -27,701 +28,1340 @@ HTML_DASHBOARD = r"""<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Flake Doctor | Forensic Root-Cause Console</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0b0f19;
-      --card-bg: #111827;
-      --card-border: #1f2937;
-      --accent: #3b82f6;
-      --accent-hover: #2563eb;
-      --text: #f3f4f6;
-      --text-dim: #9ca3af;
-      --polluter: #f97316;
-      --order-dep: #c084fc;
-      --prng: #facc15;
-      --timing: #38bdf8;
-      --broken: #ef4444;
-      --stable: #10b981;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      min-height: 100vh;
-      padding-bottom: 60px;
-    }
-    code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+      --canvas: #F5EBE3;
+      --surface-white: #FCFBF9;
+      --surface-sand: #F6EDE1;
+      --surface-sage: #E7EFEA;
+      --surface-slate: #1E293B;
+      --surface-slate-subtle: #2D3A4F;
+      --text-ink: #1C1917;
+      --text-muted: #57534E;
+      --text-kicker: #78716C;
+      --text-light: #F8FAFC;
+      --text-light-muted: #94A3B8;
+      --border-subtle: rgba(28, 25, 23, 0.08);
+      --border-card: rgba(28, 25, 23, 0.06);
+      --border-white: rgba(255, 255, 255, 0.7);
+      --shadow-sm: 0 4px 12px rgba(28, 25, 23, 0.03);
+      --shadow-md: 0 10px 30px rgba(28, 25, 23, 0.035);
+      --shadow-lg: 0 20px 40px rgba(28, 25, 23, 0.06);
+      --radius-sm: 10px;
+      --radius-md: 16px;
+      --radius-lg: 24px;
+      --radius-pill: 9999px;
+      --font-serif: 'Instrument Serif', Georgia, serif;
+      --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
 
-    header {
-      background: linear-gradient(180deg, #131b2e 0%, #0b0f19 100%);
-      border-bottom: 1px solid var(--card-border);
-      padding: 24px 36px;
+      /* Archetype tints */
+      --badge-polluter-bg: #FEF3C7;
+      --badge-polluter-text: #92400E;
+      --badge-polluter-border: #FDE68A;
+
+      --badge-order-bg: #F3E8FF;
+      --badge-order-text: #6B21A8;
+      --badge-order-border: #E9D5FF;
+
+      --badge-prng-bg: #FEF9C3;
+      --badge-prng-text: #854D0E;
+      --badge-prng-border: #FEF08A;
+
+      --badge-timing-bg: #E0F2FE;
+      --badge-timing-text: #0369A1;
+      --badge-timing-border: #BAE6FD;
+
+      --badge-broken-bg: #FEE2E2;
+      --badge-broken-text: #991B1B;
+      --badge-broken-border: #FECACA;
+
+      --badge-stable-bg: #DCFCE7;
+      --badge-stable-text: #166534;
+      --badge-stable-border: #BBF7D0;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: linear-gradient(155deg, #F6DFD3 0%, #F5EBE3 42%, #EAECE7 78%, #E2E9E5 100%);
+      color: var(--text-ink);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      line-height: 1.5;
+      padding-bottom: 96px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    code, pre, .mono {
+      font-family: var(--font-mono);
+    }
+
+    /* Floating Pill Navbar */
+    .nav-wrapper {
+      position: sticky;
+      top: 18px;
+      z-index: 100;
+      padding: 0 24px;
       display: flex;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+    .pill-navbar {
+      width: 100%;
+      max-width: 1200px;
+      background: rgba(252, 250, 247, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-white);
+      box-shadow: 0 8px 30px rgba(28, 25, 23, 0.04);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
       justify-content: space-between;
-      align-items: center;
+      gap: 16px;
     }
-    .brand {
+    .nav-brand {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-ink);
     }
-    .logo-badge {
-      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-      color: white;
+    .nav-brand-pulse {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #10B981;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+      animation: navPulse 2s infinite ease-in-out;
+    }
+    @keyframes navPulse {
+      0%, 100% { opacity: 0.5; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.15); }
+    }
+    .nav-brand-title {
+      font-family: var(--font-sans);
       font-weight: 800;
-      font-size: 18px;
-      padding: 8px 14px;
-      border-radius: 8px;
-      letter-spacing: 1px;
+      font-size: 0.95rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-ink);
     }
-    .brand h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
-    .brand span { color: var(--text-dim); font-size: 13px; font-weight: 500; }
-    .live-status {
+    .nav-brand-version {
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: var(--surface-sand);
+      color: var(--text-kicker);
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-card);
+      letter-spacing: 0.04em;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      list-style: none;
+    }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-muted);
+      font-size: 0.86rem;
+      font-weight: 600;
+      transition: color 0.15s ease;
+    }
+    .nav-links a:hover {
+      color: var(--text-ink);
+    }
+    .nav-badge-pill {
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 13px;
-      color: #34d399;
-      background: rgba(16, 185, 129, 0.1);
+      background: var(--surface-slate);
+      color: var(--text-light);
       padding: 6px 14px;
-      border-radius: 20px;
-      border: 1px solid rgba(16, 185, 129, 0.2);
-    }
-    .pulse-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 10px #10b981;
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
-
-    main { max-width: 1320px; margin: 32px auto; padding: 0 24px; }
-
-    .pipeline-banner {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 20px 28px;
-      margin-bottom: 28px;
-    }
-    .pipeline-title {
-      font-size: 12px;
+      border-radius: var(--radius-pill);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      letter-spacing: 1.5px;
-      color: var(--text-dim);
-      margin-bottom: 14px;
-      font-weight: 700;
     }
-    .pipeline-grid {
+    .nav-badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #38BDF8;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Editorial Hero Section */
+    .hero-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 32px;
+      align-items: stretch;
+      margin-bottom: 36px;
+    }
+    .hero-narrative {
+      padding: 20px 8px 12px 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .micro-kicker {
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--text-kicker);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .micro-kicker::before {
+      content: '';
+      display: inline-block;
+      width: 14px;
+      height: 2px;
+      background: var(--text-kicker);
+      border-radius: 1px;
+    }
+    .hero-headline {
+      font-family: var(--font-serif);
+      font-size: 3.5rem;
+      font-weight: 400;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: var(--text-ink);
+      margin-bottom: 18px;
+    }
+    .hero-headline em {
+      font-style: italic;
+      color: #92400E;
+    }
+    .hero-body {
+      font-size: 1.02rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      max-width: 580px;
+      margin-bottom: 24px;
+    }
+    .meta-pills-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .meta-pill {
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: var(--radius-pill);
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid var(--border-card);
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+
+    /* Bento Control Card */
+    .bento-card {
+      background: var(--surface-white);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-card);
+      box-shadow: var(--shadow-md);
+      padding: 28px;
       position: relative;
     }
-    .pipeline-step {
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 8px;
-      padding: 12px 16px;
-    }
-    .pipeline-step h3 { font-size: 13px; font-weight: 700; color: #93c5fd; margin-bottom: 4px; }
-    .pipeline-step p { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
-
-    .control-panel {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 28px;
-    }
-    .controls-row {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      margin-bottom: 18px;
-      flex-wrap: wrap;
-    }
-    select, input, button {
-      font-family: inherit;
-    }
-    .file-select {
-      flex: 1;
-      min-width: 280px;
-      background: #1f2937;
-      color: white;
-      border: 1px solid #374151;
-      padding: 12px 16px;
-      border-radius: 8px;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    .btn {
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 13px;
+    .card-header-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
       font-weight: 700;
-      border: none;
+      color: var(--text-kicker);
+      margin-bottom: 12px;
+    }
+    .control-group {
+      margin-bottom: 18px;
+    }
+    .control-label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-ink);
+      margin-bottom: 6px;
+    }
+    .select-input, .code-textarea {
+      width: 100%;
+      background: #FFFFFF;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-size: 0.86rem;
+      color: var(--text-ink);
+      font-family: var(--font-sans);
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .select-input:focus, .code-textarea:focus {
+      border-color: var(--surface-slate);
+      box-shadow: 0 0 0 3px rgba(30, 41, 59, 0.08);
+    }
+    .code-textarea {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .btn-pill {
+      border-radius: var(--radius-pill);
+      padding: 10px 20px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
       cursor: pointer;
+      border: 1px solid transparent;
       display: inline-flex;
       align-items: center;
       gap: 8px;
       transition: all 0.15s ease;
+      font-family: var(--font-sans);
     }
-    .btn-primary { background: var(--accent); color: white; }
-    .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
-    .btn-purple { background: #8b5cf6; color: white; }
-    .btn-purple:hover { background: #7c3aed; transform: translateY(-1px); }
-    .btn-green { background: #059669; color: white; }
-    .btn-green:hover { background: #047857; transform: translateY(-1px); }
-    .btn-outline { background: transparent; border: 1px solid #4b5563; color: #d1d5db; }
-    .btn-outline:hover { background: rgba(255,255,255,0.05); color: white; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-primary {
+      background: var(--surface-slate);
+      color: var(--text-light);
+      box-shadow: 0 4px 14px rgba(30, 41, 59, 0.16);
+    }
+    .btn-primary:hover {
+      background: #0F172A;
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: var(--surface-sand);
+      color: var(--text-ink);
+      border: 1px solid rgba(28, 25, 23, 0.1);
+    }
+    .btn-secondary:hover {
+      background: #EFE4D6;
+    }
+    .btn-sage {
+      background: var(--surface-sage);
+      color: #14532D;
+      border: 1px solid #BBF7D0;
+    }
+    .btn-sage:hover {
+      background: #D8E7DE;
+    }
+    .btn-subtle {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border-subtle);
+    }
+    .btn-subtle:hover {
+      background: rgba(28, 25, 23, 0.04);
+      color: var(--text-ink);
+    }
 
-    .editor-card {
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 8px;
+    /* 3-Column Bento Metrics Grid */
+    .metrics-bento-grid {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 36px;
+    }
+    .bento-slate-card {
+      background: var(--surface-slate);
+      color: var(--text-light);
+      border-radius: var(--radius-lg);
+      padding: 26px 28px;
+      box-shadow: var(--shadow-lg);
+      position: relative;
       overflow: hidden;
-      margin-bottom: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
-    .editor-header {
-      background: #161b22;
-      padding: 8px 16px;
-      font-size: 12px;
-      color: #8b949e;
-      display: flex;
-      justify-content: space-between;
-      border-bottom: 1px solid #30363d;
+    .bento-slate-card::after {
+      content: '';
+      position: absolute;
+      top: -30px;
+      right: -30px;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, rgba(30, 41, 59, 0) 70%);
+      pointer-events: none;
     }
-    textarea.code-editor {
-      width: 100%;
-      height: 180px;
-      background: #0d1117;
-      color: #e6edf3;
-      border: none;
-      padding: 14px 16px;
-      font-size: 13px;
-      line-height: 1.5;
-      resize: vertical;
-      outline: none;
-    }
-
-    .status-alert {
-      padding: 14px 20px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      display: none;
-      margin-bottom: 24px;
-    }
-    .status-alert.active { display: block; }
-    .status-alert.loading { background: rgba(59, 130, 246, 0.15); border: 1px solid #3b82f6; color: #93c5fd; }
-    .status-alert.success { background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; color: #6ee7b7; }
-    .status-alert.error { background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; }
-
-    .summary-metrics {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-      margin-bottom: 28px;
-      display: none;
-    }
-    .metric-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 16px 20px;
-    }
-    .metric-title { font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 700; margin-bottom: 6px; }
-    .metric-val { font-size: 24px; font-weight: 800; color: white; }
-
-    .autopsy-section h2 { font-size: 18px; margin-bottom: 16px; font-weight: 700; }
-    .test-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 16px;
-      transition: border-color 0.15s ease;
-    }
-    .test-card:hover { border-color: #374151; }
-    .test-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    .test-name { font-size: 16px; font-weight: 700; }
-    .badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 12px;
+    .slate-kicker {
+      color: var(--text-light-muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
       font-weight: 700;
-      letter-spacing: 0.5px;
+      margin-bottom: 12px;
     }
-    .badge-POLLUTER { background: rgba(249, 115, 22, 0.15); color: var(--polluter); border: 1px solid var(--polluter); }
-    .badge-ORDER_DEPENDENT { background: rgba(192, 132, 252, 0.15); color: var(--order-dep); border: 1px solid var(--order-dep); }
-    .badge-FLAKY_PRNG { background: rgba(250, 204, 21, 0.15); color: var(--prng); border: 1px solid var(--prng); }
-    .badge-FLAKY_TIMING { background: rgba(56, 189, 248, 0.15); color: var(--timing); border: 1px solid var(--timing); }
-    .badge-BROKEN_BUILD { background: rgba(239, 68, 68, 0.15); color: var(--broken); border: 1px solid var(--broken); }
-    .badge-STABLE { background: rgba(16, 185, 129, 0.15); color: var(--stable); border: 1px solid var(--stable); }
-
-    .test-body-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      font-size: 13px;
+    .slate-hero-stat {
+      font-family: var(--font-serif);
+      font-size: 3.2rem;
+      font-weight: 400;
+      line-height: 1;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
     }
-    @media(max-width: 860px) { .test-body-grid { grid-template-columns: 1fr; } }
-    .info-pane {
-      background: rgba(0,0,0,0.2);
-      border-radius: 8px;
-      padding: 12px 14px;
-      border: 1px solid rgba(255,255,255,0.04);
+    .slate-sub-stat {
+      font-size: 0.86rem;
+      color: var(--text-light-muted);
+      margin-bottom: 18px;
     }
-    .info-label { font-size: 11px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; font-weight: 700; }
-    .info-val { color: #d1d5db; line-height: 1.4; }
-    .snippet-box {
-      margin-top: 6px;
-      background: #0d1117;
-      padding: 8px 10px;
-      border-radius: 6px;
-      font-size: 12px;
-      color: #93c5fd;
-      border: 1px solid #30363d;
-      white-space: pre-wrap;
+    .slate-pills-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .slate-mini-pill {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      background: rgba(255, 255, 255, 0.08);
+      color: #E2E8F0;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    .diff-section {
-      margin-top: 28px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 24px;
-      display: none;
+    .bento-sand-card {
+      background: var(--surface-sand);
+      border-radius: var(--radius-lg);
+      padding: 26px 28px;
+      border: 1px solid rgba(28, 25, 23, 0.08);
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
-    .diff-header {
+    .sand-stat-number {
+      font-family: var(--font-serif);
+      font-size: 3.2rem;
+      line-height: 1;
+      color: #92400E;
+      margin-bottom: 6px;
+    }
+    .sand-archetypes-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 14px;
+    }
+    .sand-archetype-row {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      margin-bottom: 14px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
     }
-    pre.diff-view {
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 16px;
-      overflow-x: auto;
-      font-size: 12px;
-      line-height: 1.6;
-    }
-    .diff-add { color: #34d399; }
-    .diff-del { color: #f87171; }
-    .diff-hunk { color: #60a5fa; }
 
-    .after-fix-table {
+    .bento-sage-card {
+      background: var(--surface-sage);
+      border-radius: var(--radius-lg);
+      padding: 26px 28px;
+      border: 1px solid rgba(28, 25, 23, 0.08);
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .sage-stat-number {
+      font-family: var(--font-serif);
+      font-size: 3.2rem;
+      line-height: 1;
+      color: #14532D;
+      margin-bottom: 6px;
+    }
+
+    /* Structured Forensic Autopsy List */
+    .section-headline-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-bottom: 18px;
+      padding: 0 4px;
+    }
+    .section-title {
+      font-family: var(--font-serif);
+      font-size: 2rem;
+      font-weight: 400;
+      color: var(--text-ink);
+      line-height: 1.1;
+    }
+    .section-subtitle {
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .autopsy-card {
+      background: var(--surface-white);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-card);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+      margin-bottom: 36px;
+    }
+    .autopsy-header-row {
+      display: grid;
+      grid-template-columns: 2.2fr 1.1fr 2.3fr 2.6fr 1fr;
+      padding: 14px 24px;
+      background: #F8F6F2;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--text-kicker);
+    }
+    .autopsy-row {
+      display: grid;
+      grid-template-columns: 2.2fr 1.1fr 2.3fr 2.6fr 1fr;
+      padding: 20px 24px;
+      border-bottom: 1px solid rgba(28, 25, 23, 0.05);
+      align-items: start;
+      transition: background 0.15s ease;
+    }
+    .autopsy-row:last-child {
+      border-bottom: none;
+    }
+    .autopsy-row:hover {
+      background: #FAF8F5;
+    }
+
+    /* Column Styles */
+    .col-test-name {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .test-func-title {
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .test-func-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sweep-badge {
+      font-size: 0.68rem;
+      font-family: var(--font-mono);
+      background: rgba(28, 25, 23, 0.05);
+      color: var(--text-muted);
+      padding: 2px 7px;
+      border-radius: var(--radius-pill);
+    }
+
+    /* Verdict Badges */
+    .verdict-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      width: fit-content;
+      border: 1px solid transparent;
+    }
+    .badge-polluter {
+      background: var(--badge-polluter-bg);
+      color: var(--badge-polluter-text);
+      border-color: var(--badge-polluter-border);
+    }
+    .badge-order {
+      background: var(--badge-order-bg);
+      color: var(--badge-order-text);
+      border-color: var(--badge-order-border);
+    }
+    .badge-prng {
+      background: var(--badge-prng-bg);
+      color: var(--badge-prng-text);
+      border-color: var(--badge-prng-border);
+    }
+    .badge-timing {
+      background: var(--badge-timing-bg);
+      color: var(--badge-timing-text);
+      border-color: var(--badge-timing-border);
+    }
+    .badge-broken {
+      background: var(--badge-broken-bg);
+      color: var(--badge-broken-text);
+      border-color: var(--badge-broken-border);
+    }
+    .badge-stable {
+      background: var(--badge-stable-bg);
+      color: var(--badge-stable-text);
+      border-color: var(--badge-stable-border);
+    }
+
+    .col-root-cause {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+      padding-right: 14px;
+    }
+    .culprit-tag {
+      display: inline-block;
+      margin-top: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      background: #FDE68A;
+      color: #78350F;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .ast-prescription-box {
+      background: var(--surface-sand);
+      border: 1px solid rgba(28, 25, 23, 0.08);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-size: 0.78rem;
+    }
+    .ast-line-pill {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-kicker);
+      margin-bottom: 4px;
+    }
+    .ast-prescription-text {
+      color: var(--text-ink);
+      line-height: 1.35;
+      font-size: 0.78rem;
+    }
+
+    .col-clean-runs {
+      font-family: var(--font-mono);
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--text-ink);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .clean-runs-sub {
+      font-size: 0.68rem;
+      font-weight: 400;
+      color: var(--text-kicker);
+    }
+
+    /* AST Unified Diff Section */
+    .diff-section-card {
+      background: var(--surface-white);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-card);
+      box-shadow: var(--shadow-md);
+      padding: 28px;
+      margin-bottom: 36px;
+    }
+    .diff-pre {
+      background: #181E29;
+      color: #E2E8F0;
+      border-radius: var(--radius-md);
+      padding: 18px 20px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.5;
+      overflow-x: auto;
+      max-height: 380px;
+    }
+    .diff-line-add {
+      background: rgba(16, 185, 129, 0.2);
+      color: #6EE7B7;
+      display: block;
+      margin: 0 -20px;
+      padding: 0 20px;
+    }
+    .diff-line-del {
+      background: rgba(239, 68, 68, 0.2);
+      color: #FCA5A5;
+      display: block;
+      margin: 0 -20px;
+      padding: 0 20px;
+    }
+    .diff-line-hdr {
+      color: #38BDF8;
+      font-weight: 600;
+    }
+
+    /* Before / After Table */
+    .compare-table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 14px;
-      font-size: 13px;
+      margin-top: 16px;
+      font-size: 0.84rem;
     }
-    .after-fix-table th, .after-fix-table td {
-      padding: 10px 14px;
+    .compare-table th {
       text-align: left;
-      border-bottom: 1px solid #1f2937;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-kicker);
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle);
     }
-    .after-fix-table th { background: rgba(255,255,255,0.03); color: var(--text-dim); font-size: 11px; text-transform: uppercase; }
+    .compare-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(28, 25, 23, 0.05);
+    }
+
+    /* 4-Step Walkthrough Section */
+    .walkthrough-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 18px;
+      margin-bottom: 36px;
+    }
+    .step-card {
+      background: var(--surface-white);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-card);
+      padding: 22px 20px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .step-number {
+      font-family: var(--font-serif);
+      font-size: 1.8rem;
+      line-height: 1;
+      color: #92400E;
+      margin-bottom: 10px;
+    }
+    .step-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-ink);
+      margin-bottom: 8px;
+    }
+    .step-desc {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .formula-box {
+      margin-top: 10px;
+      background: var(--surface-sand);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-ink);
+      text-align: center;
+    }
+
+    /* Empty & Loading States */
+    .empty-state {
+      padding: 60px 24px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #FFFFFF;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .metrics-bento-grid { grid-template-columns: 1fr; }
+      .walkthrough-grid { grid-template-columns: 1fr 1fr; }
+      .autopsy-header-row, .autopsy-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <div class="logo-badge">FD</div>
-      <div>
-        <h1>Flake Doctor</h1>
-        <span>Autonomous Test Forensic Engine & Closed-Loop Healer</span>
-      </div>
-    </div>
-    <div class="live-status">
-      <div class="pulse-dot"></div>
-      <span>Forensic Daemon Ready</span>
-    </div>
-  </header>
 
-  <main>
-    <div class="pipeline-banner">
-      <div class="pipeline-title">Deterministic Forensic Pipeline</div>
-      <div class="pipeline-grid">
-        <div class="pipeline-step">
-          <h3>1. Perturbation Engine</h3>
-          <p>8-seed PRNG sweep + 6-level thread delay jitter injection isolate non-determinism.</p>
+  <!-- Floating Pill Navbar -->
+  <div class="nav-wrapper">
+    <nav class="pill-navbar">
+      <a href="#" class="nav-brand">
+        <div class="nav-brand-pulse"></div>
+        <span class="nav-brand-title">Flake Doctor</span>
+        <span class="nav-brand-version">v1.0.0</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#diagnostics">Diagnostics</a></li>
+        <li><a href="#autopatch">AST Auto-Patcher</a></li>
+        <li><a href="#methodology">How It Works</a></li>
+      </ul>
+      <div class="nav-badge-pill">
+        <div class="nav-badge-dot"></div>
+        <span>TEAM DUST_BUSTERS | PS ID: OI</span>
+      </div>
+    </nav>
+  </div>
+
+  <main class="container">
+
+    <!-- 2-Column Asymmetric Editorial Hero -->
+    <section class="hero-grid" id="diagnostics">
+      <div class="hero-narrative">
+        <div class="micro-kicker">Forensic Flakiness Engine & AST Synthesizer</div>
+        <h1 class="hero-headline">Diagnose, isolate, and <em>heal</em> flaky tests.</h1>
+        <p class="hero-body">
+          Flake Doctor eliminates CI non-determinism with dynamic isolation matrices, unseeded PRNG sweepers, thread-scheduler contention injection, and surgical AST code rewrite synthesizers.
+        </p>
+        <div class="meta-pills-row">
+          <span class="meta-pill">Surgical AST Healing</span>
+          <span class="meta-pill">Bisect State Isolation</span>
+          <span class="meta-pill">Zero External Web Frameworks</span>
+          <span class="meta-pill">Confidence Runs Formula</span>
         </div>
-        <div class="pipeline-step">
-          <h3>2. Binary Order Bisector</h3>
-          <p>O(log N) bisection pinpoints state polluter tests leaking memory or env vars.</p>
+      </div>
+
+      <!-- Bento Control Card -->
+      <div class="bento-card">
+        <div class="card-header-label">Investigation Controls</div>
+
+        <div class="control-group">
+          <label class="control-label" for="suiteSelect">Target Benchmark Suite</label>
+          <select id="suiteSelect" class="select-input">
+            <option value="">Loading test suites...</option>
+          </select>
         </div>
-        <div class="pipeline-step">
-          <h3>3. Python AST X-Ray</h3>
-          <p>Static AST locator extracts offending statements & calculates 99% confidence runs.</p>
+
+        <div class="control-group">
+          <label class="control-label" for="customCodeArea">Or Paste Pytest Code</label>
+          <textarea id="customCodeArea" class="code-textarea" placeholder="# Paste custom test functions here...&#10;def test_demo():&#10;    assert True"></textarea>
         </div>
-        <div class="pipeline-step">
-          <h3>4. Closed-Loop Auto-Patcher</h3>
-          <p>Rewrites fixtures/monkeypatches and proves cure without masking real bugs.</p>
+
+        <div class="btn-row">
+          <button id="btnScan" class="btn-pill btn-primary">
+            <span id="scanBtnText">Run Forensic Scan</span>
+          </button>
+          <button id="btnPreviewPatch" class="btn-pill btn-secondary">
+            <span>Preview AST Patch</span>
+          </button>
+          <button id="btnApplyFix" class="btn-pill btn-sage">
+            <span>Apply Fix & Verify</span>
+          </button>
+          <button id="btnRestore" class="btn-pill btn-subtle">
+            <span>Restore Original</span>
+          </button>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="control-panel">
-      <div class="controls-row">
-        <select id="fileDropdown" class="file-select" onchange="onFileSelected()">
-          <option value="" disabled selected>Loading test files...</option>
-        </select>
-        <button id="btnScan" class="btn btn-primary" onclick="runScan()">
-          <span>&#9654;</span> Run Forensic Scan
-        </button>
-        <button id="btnPatch" class="btn btn-purple" onclick="previewPatch()" disabled>
-          <span>&#9874;</span> Preview AST Patch
-        </button>
-        <button id="btnApply" class="btn btn-green" onclick="applyFix()" disabled>
-          <span>&#10003;</span> Apply Fix & Verify Cure
-        </button>
-        <button id="btnRestore" class="btn btn-outline" onclick="restoreOriginal()" disabled>
-          <span>&#8634;</span> Restore Original File
-        </button>
-      </div>
-
-      <div class="editor-card">
-        <div class="editor-header">
-          <span id="editorLabel">Active Test Source Code</span>
-          <span id="editorStatus">Read-Only</span>
+    <!-- 3-Column Bento Metrics Grid -->
+    <section class="metrics-bento-grid">
+      <!-- Card 1: Slate Metric -->
+      <div class="bento-slate-card">
+        <div class="slate-kicker">Suite Health & Confidence</div>
+        <div class="slate-hero-stat" id="statHealth">--%</div>
+        <div class="slate-sub-stat" id="statSubtitle">Awaiting diagnostic scan...</div>
+        <div class="slate-pills-row">
+          <span class="slate-mini-pill" id="pillTestsCount">0 Tests Checked</span>
+          <span class="slate-mini-pill" id="pillDuration">0.00s Duration</span>
+          <span class="slate-mini-pill" id="pillSubprocesses">0 Subprocesses</span>
         </div>
-        <textarea id="codeEditor" class="code-editor mono" spellcheck="false" placeholder="Select a file or paste custom pytest code..."></textarea>
       </div>
-    </div>
 
-    <div id="statusAlert" class="status-alert"></div>
+      <!-- Card 2: Sand Metric -->
+      <div class="bento-sand-card">
+        <div>
+          <div class="card-header-label" style="color: #92400E;">Flakiness Archetypes</div>
+          <div class="sand-stat-number" id="statFlakesCount">0</div>
+          <p style="font-size: 0.8rem; color: var(--text-muted);">Non-deterministic faults isolated</p>
+        </div>
+        <div class="sand-archetypes-list" id="archetypesBreakdown">
+          <div class="sand-archetype-row"><span>State Pollution:</span><span id="countPolluter">0</span></div>
+          <div class="sand-archetype-row"><span>Order Dependent:</span><span id="countOrder">0</span></div>
+          <div class="sand-archetype-row"><span>Unseeded PRNG:</span><span id="countPrng">0</span></div>
+          <div class="sand-archetype-row"><span>Timing Race:</span><span id="countTiming">0</span></div>
+          <div class="sand-archetype-row"><span>Broken Build:</span><span id="countBroken">0</span></div>
+        </div>
+      </div>
 
-    <div id="metricsRow" class="summary-metrics">
-      <div class="metric-card">
-        <div class="metric-title">Scan Elapsed Time</div>
-        <div id="metricTime" class="metric-val mono">-</div>
+      <!-- Card 3: Sage Metric -->
+      <div class="bento-sage-card">
+        <div>
+          <div class="card-header-label" style="color: #14532D;">Synthesis & Auto-Heal</div>
+          <div class="sage-stat-number" id="statHealedCount">0</div>
+          <p style="font-size: 0.8rem; color: var(--text-muted);">Tests restored to STABLE state</p>
+        </div>
+        <div style="margin-top: 14px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;" id="healStatusText">
+          Auto-patching generates pytest fixtures and monkeypatch replacements without masking genuine bugs.
+        </div>
       </div>
-      <div class="metric-card">
-        <div class="metric-title">Subprocess Invocations</div>
-        <div id="metricSubs" class="metric-val mono">-</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-title">Tests Diagnosed</div>
-        <div id="metricTests" class="metric-val mono">-</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-title">Cure Rate / Status</div>
-        <div id="metricCure" class="metric-val mono" style="color: #34d399;">-</div>
-      </div>
-    </div>
+    </section>
 
-    <div id="autopsySection" class="autopsy-section" style="display: none;">
-      <h2>Forensic Autopsy Results</h2>
-      <div id="cardsContainer"></div>
-    </div>
-
-    <div id="diffSection" class="diff-section">
-      <div class="diff-header">
-        <h2>AST Unified Diff (fixes.patch)</h2>
-        <span class="mono" style="font-size: 12px; color: var(--text-dim);" id="diffFileLabel"></span>
+    <!-- Structured Forensic Autopsy List -->
+    <section>
+      <div class="section-headline-row">
+        <div>
+          <h2 class="section-title">Forensic Autopsy Results</h2>
+          <p class="section-subtitle">Individual test breakdowns with AST attribution and statistical failure bounds.</p>
+        </div>
       </div>
-      <pre id="diffViewer" class="diff-view mono"></pre>
 
-      <div id="afterFixContainer" style="margin-top: 24px; display: none;">
-        <h3 style="font-size: 15px; margin-bottom: 8px; color: #93c5fd;">Closed-Loop Fix Verification</h3>
-        <table class="after-fix-table">
+      <div class="autopsy-card">
+        <div class="autopsy-header-row">
+          <div>Test Function</div>
+          <div>Verdict</div>
+          <div>Root Cause & Culprit</div>
+          <div>AST Code Prescription</div>
+          <div>Est. Clean Runs</div>
+        </div>
+        <div id="autopsyBody">
+          <div class="empty-state">
+            Select a target test suite above and click <strong>Run Forensic Scan</strong> to initiate autopsy.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AST Unified Diff Section -->
+    <section id="autopatch" class="diff-section-card" style="display: none;">
+      <div class="section-headline-row">
+        <div>
+          <h2 class="section-title">Synthesized AST Patch</h2>
+          <p class="section-subtitle">Automated source rewrite eliminating state pollution and order sensitivity.</p>
+        </div>
+      </div>
+      <pre class="diff-pre" id="diffContent">No patch generated.</pre>
+
+      <div id="compareWrapper" style="display: none; margin-top: 24px;">
+        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 8px;">Verification Comparison</h3>
+        <table class="compare-table">
           <thead>
             <tr>
               <th>Test Function</th>
               <th>Before Verdict</th>
               <th>After Verdict</th>
+              <th>Outcome</th>
             </tr>
           </thead>
-          <tbody id="afterFixBody"></tbody>
+          <tbody id="compareTableBody"></tbody>
         </table>
-        <div id="healSummary" style="margin-top: 12px; font-weight: 700; color: #34d399;"></div>
       </div>
-    </div>
+    </section>
+
+    <!-- 4-Step Walkthrough Section -->
+    <section id="methodology" style="margin-top: 48px;">
+      <div class="section-headline-row">
+        <div>
+          <h2 class="section-title">How Flake Doctor Works</h2>
+          <p class="section-subtitle">Dynamic multi-stage isolation and statistical verification engine.</p>
+        </div>
+      </div>
+
+      <div class="walkthrough-grid">
+        <div class="step-card">
+          <div>
+            <div class="step-number">01</div>
+            <div class="step-title">Order Shuffling & Bisect</div>
+            <p class="step-desc">Runs standard order, reverse order, and targeted sub-matrix permutations to uncover state polluters and order-dependent consumers.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div>
+            <div class="step-number">02</div>
+            <div class="step-title">PRNG Sweep Matrix</div>
+            <p class="step-desc">Injects known seed variations into unseeded random calls to expose threshold flakiness and statistical variance errors.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div>
+            <div class="step-number">03</div>
+            <div class="step-title">CPU Jitter & Timing Race</div>
+            <p class="step-desc">Launches worker contention threads to provoke latent thread scheduling and event wait races.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div>
+            <div class="step-number">04</div>
+            <div class="step-title">AST Synthesis & Bounds</div>
+            <p class="step-desc">Synthesizes pytest fixtures and monkeypatches, bounding required verification runs by:</p>
+          </div>
+          <div class="formula-box">N = &lceil;ln(0.01) / ln(1 - p)&rceil;</div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <script>
-    let filesCache = {};
-    let currentReports = null;
-    let currentDiff = null;
+    let currentFiles = [];
+    let lastScanData = null;
 
+    // Load available files on startup
     async function loadFiles() {
       try {
         const res = await fetch('/api/files');
         const data = await res.json();
-        filesCache = {};
-        const sel = document.getElementById('fileDropdown');
-        sel.innerHTML = '';
-
-        data.files.forEach((f, i) => {
-          filesCache[f.path] = f.content;
+        currentFiles = data.files || [];
+        const select = document.getElementById('suiteSelect');
+        select.innerHTML = '';
+        currentFiles.forEach((f, idx) => {
           const opt = document.createElement('option');
           opt.value = f.path;
-          opt.textContent = `${f.path}`;
-          if (i === 0) opt.selected = true;
-          sel.appendChild(opt);
+          opt.textContent = `${f.name} (${f.path.split('/')[0]})`;
+          if (idx === 0) opt.selected = true;
+          select.appendChild(opt);
         });
-
-        // Add custom code option
-        const customOpt = document.createElement('option');
-        customOpt.value = "__CUSTOM__";
-        customOpt.textContent = "[+ Custom Live Pytest Code]";
-        sel.appendChild(customOpt);
-
-        onFileSelected();
-      } catch (err) {
-        showAlert("Failed to load files: " + err, "error");
-      }
-    }
-
-    function onFileSelected() {
-      const sel = document.getElementById('fileDropdown');
-      const editor = document.getElementById('codeEditor');
-      const status = document.getElementById('editorStatus');
-      const label = document.getElementById('editorLabel');
-
-      if (sel.value === "__CUSTOM__") {
-        label.textContent = "Custom Live Pytest Sandbox";
-        status.textContent = "Editable";
-        editor.readOnly = false;
-        if (!editor.value || !editor.value.includes("def test_")) {
-          editor.value = "import random\nimport os\n\nCACHE = {}\n\ndef test_custom_pollute():\n    CACHE['flag'] = True\n\ndef test_custom_consumer():\n    assert CACHE.get('flag') is True\n\ndef test_custom_unseeded():\n    vals = [random.random() for _ in range(10)]\n    assert sum(vals)/len(vals) > 0.42\n";
+        if (currentFiles.length > 0) {
+          document.getElementById('customCodeArea').value = currentFiles[0].content;
         }
-      } else {
-        label.textContent = sel.value;
-        status.textContent = "Read-Only";
-        editor.readOnly = true;
-        editor.value = filesCache[sel.value] || "";
+      } catch (err) {
+        console.error('Failed to load test files:', err);
       }
     }
 
-    function showAlert(msg, type) {
-      const el = document.getElementById('statusAlert');
-      el.className = "status-alert active " + type;
-      el.innerHTML = msg;
+    document.getElementById('suiteSelect').addEventListener('change', (e) => {
+      const selected = currentFiles.find(f => f.path === e.target.value);
+      if (selected) {
+        document.getElementById('customCodeArea').value = selected.content;
+      }
+    });
+
+    // Helper to get verdict badge class
+    function getVerdictBadgeClass(verdict) {
+      switch (verdict) {
+        case 'STATE_POLLUTION': return 'badge-polluter';
+        case 'ORDER_DEPENDENT': return 'badge-order';
+        case 'UNSEEDED_PRNG': return 'badge-prng';
+        case 'TIMING_RACE': return 'badge-timing';
+        case 'BROKEN_BUILD': return 'badge-broken';
+        case 'STABLE': return 'badge-stable';
+        default: return 'badge-stable';
+      }
     }
 
-    function hideAlert() {
-      document.getElementById('statusAlert').className = "status-alert";
-    }
-
+    // Run Forensic Scan
     async function runScan() {
-      const sel = document.getElementById('fileDropdown');
-      const editor = document.getElementById('codeEditor');
       const btn = document.getElementById('btnScan');
+      const textSpan = document.getElementById('scanBtnText');
+      const suiteSelect = document.getElementById('suiteSelect');
+      const customCode = document.getElementById('customCodeArea').value;
 
       btn.disabled = true;
-      document.getElementById('btnPatch').disabled = true;
-      document.getElementById('btnApply').disabled = true;
-      showAlert("Running Forensic Scan across perturbation engine... please wait (~20-40s)", "loading");
-
-      let payload = {};
-      if (sel.value === "__CUSTOM__") {
-        payload = { custom_code: editor.value };
-      } else {
-        payload = { file_path: sel.value };
-      }
+      textSpan.innerHTML = '<span class="spinner"></span> Scanning...';
 
       try {
+        const payload = {};
+        const selectedFile = suiteSelect.value;
+        const matching = currentFiles.find(f => f.path === selectedFile);
+        
+        // If code has been edited from the original file, send custom_code
+        if (matching && matching.content.trim() === customCode.trim()) {
+          payload.file_path = selectedFile;
+        } else {
+          payload.custom_code = customCode;
+        }
+
         const res = await fetch('/api/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        const data = await res.json();
-        btn.disabled = false;
 
+        const data = await res.json();
         if (data.error) {
-          showAlert("Scan error: " + data.error, "error");
+          alert('Scan error: ' + data.error);
           return;
         }
 
-        currentReports = data.results;
-        currentDiff = data.diff;
-
-        showAlert(`Forensic scan complete in ${data.scan_time.toFixed(1)}s across ${data.subprocess_count} subprocess runs.`, "success");
+        lastScanData = data;
         renderResults(data);
-
-        document.getElementById('btnPatch').disabled = false;
-        document.getElementById('btnApply').disabled = false;
-        document.getElementById('btnRestore').disabled = false;
       } catch (err) {
+        alert('Network or server error during scan: ' + err.message);
+      } finally {
         btn.disabled = false;
-        showAlert("Scan failed: " + err, "error");
+        textSpan.textContent = 'Run Forensic Scan';
       }
     }
 
     function renderResults(data) {
-      document.getElementById('metricsRow').style.display = "grid";
-      document.getElementById('metricTime').textContent = data.scan_time.toFixed(1) + "s";
-      document.getElementById('metricSubs').textContent = data.subprocess_count;
-      document.getElementById('metricTests').textContent = data.results.length;
+      const results = data.results || [];
+      const autopsyBody = document.getElementById('autopsyBody');
+      autopsyBody.innerHTML = '';
 
-      let flakyCount = data.results.filter(r => r.verdict.startsWith("FLAKY") || r.verdict === "ORDER_DEPENDENT" || r.verdict === "POLLUTER").length;
-      document.getElementById('metricCure').textContent = `${flakyCount} Flakes Found`;
+      if (results.length === 0) {
+        autopsyBody.innerHTML = '<div class="empty-state">No tests found in target file.</div>';
+        return;
+      }
 
-      const section = document.getElementById('autopsySection');
-      const container = document.getElementById('cardsContainer');
-      section.style.display = "block";
-      container.innerHTML = "";
+      let stableCount = 0;
+      let polluterCount = 0;
+      let orderCount = 0;
+      let prngCount = 0;
+      let timingCount = 0;
+      let brokenCount = 0;
 
-      data.results.forEach(r => {
-        const card = document.createElement('div');
-        card.className = "test-card";
+      results.forEach(r => {
+        if (r.verdict === 'STABLE') stableCount++;
+        else if (r.verdict === 'STATE_POLLUTION') polluterCount++;
+        else if (r.verdict === 'ORDER_DEPENDENT') orderCount++;
+        else if (r.verdict === 'UNSEEDED_PRNG') prngCount++;
+        else if (r.verdict === 'TIMING_RACE') timingCount++;
+        else if (r.verdict === 'BROKEN_BUILD') brokenCount++;
 
-        let astHtml = "N/A";
-        if (r.findings && r.findings.length > 0) {
-          astHtml = r.findings.map(f => `
-            <div><strong>L${f.line} [${f.category}]</strong></div>
-            <div style="color: #9ca3af; margin-bottom: 4px;">${f.prescription}</div>
-            <div class="snippet-box mono">${f.code_snippet}</div>
-          `).join('<hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.06); margin: 8px 0;">');
-        }
+        const row = document.createElement('div');
+        row.className = 'autopsy-row';
 
-        let culpritHtml = r.culprit ? `<div style="margin-top: 4px; color: #c084fc;"><strong>Culprit Predecessor:</strong> ${r.culprit}</div>` : "";
-        let confHtml = r.confidence_runs !== null ? `${r.confidence_runs} Clean Runs` : "N/A";
-
-        card.innerHTML = `
-          <div class="test-card-header">
-            <span class="test-name mono">${r.name}</span>
-            <span class="badge badge-${r.verdict}">${r.verdict}</span>
-          </div>
-          <div class="test-body-grid">
-            <div class="info-pane">
-              <div class="info-label">Root Cause Analysis</div>
-              <div class="info-val">${r.root_cause}</div>
-              ${culpritHtml}
-              <div style="margin-top: 10px; font-size: 11px; color: var(--text-dim);">
-                Sweep Failure Rate: <span class="mono" style="color: white;">${(r.sweep_fail_rate * 100).toFixed(0)}%</span> |
-                99% Conf. Metric: <span class="mono" style="color: #34d399;">${confHtml}</span>
-              </div>
-            </div>
-            <div class="info-pane">
-              <div class="info-label">AST X-Ray & Prescription</div>
-              <div class="info-val">${astHtml}</div>
+        // Col 1: Test function
+        const failRatePct = (r.sweep_fail_rate * 100).toFixed(0);
+        const col1 = `
+          <div class="col-test-name">
+            <span class="test-func-title" title="${r.name}">${r.name}</span>
+            <div class="test-func-meta">
+              <span class="sweep-badge">Fail Rate: ${failRatePct}%</span>
             </div>
           </div>
         `;
-        container.appendChild(card);
+
+        // Col 2: Verdict
+        const badgeClass = getVerdictBadgeClass(r.verdict);
+        const col2 = `
+          <div>
+            <span class="verdict-badge ${badgeClass}">${r.verdict}</span>
+          </div>
+        `;
+
+        // Col 3: Root cause
+        let culpritHtml = '';
+        if (r.culprit_predecessor) {
+          culpritHtml = `<div class="culprit-tag">Culprit: ${r.culprit_predecessor}</div>`;
+        }
+        const col3 = `
+          <div class="col-root-cause">
+            <div>${r.root_cause || 'Deterministic behavior confirmed.'}</div>
+            ${culpritHtml}
+          </div>
+        `;
+
+        // Col 4: AST Prescription
+        let astHtml = '<div style="color: var(--text-kicker); font-size: 0.78rem;">N/A</div>';
+        if (r.ast_line !== null || r.code_prescription) {
+          const lineStr = r.ast_line !== null ? `Line ${r.ast_line}` : 'AST';
+          astHtml = `
+            <div class="ast-prescription-box">
+              <span class="ast-line-pill">${lineStr}</span>
+              <div class="ast-prescription-text">${r.code_prescription || 'Review AST findings'}</div>
+            </div>
+          `;
+        }
+        const col4 = `<div>${astHtml}</div>`;
+
+        // Col 5: Clean runs
+        const cleanRuns = r.est_clean_runs_99 !== null ? r.est_clean_runs_99 : 'N/A';
+        const col5 = `
+          <div class="col-clean-runs">
+            <span>${cleanRuns}</span>
+            <span class="clean-runs-sub">${r.est_clean_runs_99 !== null ? 'runs (99%)' : 'deterministic'}</span>
+          </div>
+        `;
+
+        row.innerHTML = col1 + col2 + col3 + col4 + col5;
+        autopsyBody.appendChild(row);
       });
+
+      // Update Summary Bento Cards
+      const totalTests = results.length;
+      const flakesCount = totalTests - stableCount;
+      const healthPct = Math.round((stableCount / totalTests) * 100);
+
+      document.getElementById('statHealth').textContent = `${healthPct}%`;
+      document.getElementById('statSubtitle').textContent = `${stableCount} of ${totalTests} tests stable under stress`;
+      document.getElementById('pillTestsCount').textContent = `${totalTests} Tests Evaluated`;
+      document.getElementById('pillDuration').textContent = `${(data.scan_time || 0).toFixed(2)}s Scan Time`;
+      document.getElementById('pillSubprocesses').textContent = `${data.subprocess_count || 0} Subprocesses`;
+
+      document.getElementById('statFlakesCount').textContent = flakesCount;
+      document.getElementById('countPolluter').textContent = polluterCount;
+      document.getElementById('countOrder').textContent = orderCount;
+      document.getElementById('countPrng').textContent = prngCount;
+      document.getElementById('countTiming').textContent = timingCount;
+      document.getElementById('countBroken').textContent = brokenCount;
+
+      // Diff preview
+      if (data.diff) {
+        renderDiff(data.diff);
+      }
     }
 
-    function previewPatch() {
-      if (!currentDiff) {
-        showAlert("No diff generated.", "error");
+    function renderDiff(rawDiff) {
+      const diffSection = document.getElementById('autopatch');
+      const diffPre = document.getElementById('diffContent');
+      if (!rawDiff || rawDiff.trim() === '') {
+        diffSection.style.display = 'none';
         return;
       }
-      const section = document.getElementById('diffSection');
-      section.style.display = "block";
-      const viewer = document.getElementById('diffViewer');
-      document.getElementById('afterFixContainer').style.display = "none";
+      diffSection.style.display = 'block';
 
-      const lines = currentDiff.split('\n');
-      const colored = lines.map(line => {
-        if (line.startsWith('+') && !line.startsWith('+++')) return `<span class="diff-add">${escapeHtml(line)}</span>`;
-        if (line.startsWith('-') && !line.startsWith('---')) return `<span class="diff-del">${escapeHtml(line)}</span>`;
-        if (line.startsWith('@@')) return `<span class="diff-hunk">${escapeHtml(line)}</span>`;
-        return escapeHtml(line);
+      const lines = rawDiff.split('\n');
+      const formatted = lines.map(line => {
+        const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          return `<span class="diff-line-add">${escaped}</span>`;
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          return `<span class="diff-line-del">${escaped}</span>`;
+        } else if (line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++')) {
+          return `<span class="diff-line-hdr">${escaped}</span>`;
+        }
+        return escaped;
       }).join('\n');
 
-      viewer.innerHTML = colored;
-      section.scrollIntoView({ behavior: 'smooth' });
+      diffPre.innerHTML = formatted;
     }
 
-    async function applyFix() {
-      const sel = document.getElementById('fileDropdown');
-      const btn = document.getElementById('btnApply');
-      btn.disabled = true;
+    // Preview Patch button
+    document.getElementById('btnPreviewPatch').addEventListener('click', () => {
+      if (lastScanData && lastScanData.diff) {
+        renderDiff(lastScanData.diff);
+        document.getElementById('autopatch').scrollIntoView({ behavior: 'smooth' });
+      } else {
+        alert('Please run a forensic scan first.');
+      }
+    });
 
-      showAlert("Applying AST Patch and running closed-loop verification across all perturbation sweeps... (~30-50s)", "loading");
+    // Apply Fix & Verify
+    async function applyFix() {
+      const targetPath = lastScanData ? lastScanData.file_path : document.getElementById('suiteSelect').value;
+      if (!targetPath) {
+        alert('Please select or scan a target file first.');
+        return;
+      }
+
+      const btn = document.getElementById('btnApplyFix');
+      btn.disabled = true;
+      btn.textContent = 'Applying & Verifying...';
 
       try {
         const res = await fetch('/api/fix', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file_path: sel.value, action: 'apply' })
+          body: JSON.stringify({ file_path: targetPath, action: 'apply' })
         });
         const data = await res.json();
-        btn.disabled = false;
-
         if (data.error) {
-          showAlert("Apply error: " + data.error, "error");
+          alert('Fix error: ' + data.error);
           return;
         }
 
-        showAlert(`Cure verified! ${data.healed} tests healed to STABLE. ${data.remaining_bugs} genuine bug remains.`, "success");
+        document.getElementById('statHealedCount').textContent = data.healed || 0;
+        document.getElementById('healStatusText').textContent = 
+          `Auto-fix verified: ${data.healed} tests healed to STABLE. ${data.remaining_bugs || 0} genuine bug(s) remain.`;
 
-        // Display after table
-        previewPatch();
-        const afterCont = document.getElementById('afterFixContainer');
-        afterCont.style.display = "block";
-        const tbody = document.getElementById('afterFixBody');
-        tbody.innerHTML = "";
+        // Render Diff
+        if (data.diff) renderDiff(data.diff);
 
-        const afterMap = {};
-        data.after.forEach(r => { afterMap[r.name] = r.verdict; });
+        // Render Before/After Compare Table
+        const compareWrapper = document.getElementById('compareWrapper');
+        const compareTableBody = document.getElementById('compareTableBody');
+        compareTableBody.innerHTML = '';
 
-        data.before.forEach(r => {
-          const afterV = afterMap[r.name] || "UNKNOWN";
-          const row = document.createElement('tr');
-          row.innerHTML = `
-            <td class="mono"><strong>${r.name}</strong></td>
-            <td><span class="badge badge-${r.verdict}">${r.verdict}</span></td>
-            <td><span class="badge badge-${afterV}">${afterV}</span></td>
+        const beforeMap = {};
+        (data.before || []).forEach(b => beforeMap[b.name] = b);
+
+        (data.after || []).forEach(aft => {
+          const bef = beforeMap[aft.name] || {};
+          const tr = document.createElement('tr');
+          const isHealed = bef.verdict !== aft.verdict && aft.verdict === 'STABLE';
+          const outcomeBadge = isHealed 
+            ? '<span class="verdict-badge badge-stable">HEALED</span>'
+            : (aft.verdict === 'BROKEN_BUILD' ? '<span class="verdict-badge badge-broken">GENUINE BUG</span>' : '<span class="verdict-badge badge-stable">UNCHANGED</span>');
+
+          tr.innerHTML = `
+            <td style="font-family: var(--font-mono); font-weight: 600;">${aft.name}</td>
+            <td><span class="verdict-badge ${getVerdictBadgeClass(bef.verdict)}">${bef.verdict || 'N/A'}</span></td>
+            <td><span class="verdict-badge ${getVerdictBadgeClass(aft.verdict)}">${aft.verdict}</span></td>
+            <td>${outcomeBadge}</td>
           `;
-          tbody.appendChild(row);
+          compareTableBody.appendChild(tr);
         });
 
-        const bugStr = data.remaining_bugs === 1 ? "1 genuine bug remains" : `${data.remaining_bugs} genuine bugs remain`;
-        document.getElementById('healSummary').textContent = `${data.healed} of ${data.before.length} tests healed, ${bugStr}`;
-        afterCont.scrollIntoView({ behavior: 'smooth' });
+        compareWrapper.style.display = 'block';
+        document.getElementById('autopatch').style.display = 'block';
+        document.getElementById('autopatch').scrollIntoView({ behavior: 'smooth' });
+
+        // Reload the new content into the textarea
+        const updatedRes = await fetch('/api/files');
+        const updatedData = await updatedRes.json();
+        const updatedFile = (updatedData.files || []).find(f => f.path === targetPath);
+        if (updatedFile) {
+          document.getElementById('customCodeArea').value = updatedFile.content;
+        }
       } catch (err) {
+        alert('Network or server error during fix: ' + err.message);
+      } finally {
         btn.disabled = false;
-        showAlert("Apply failed: " + err, "error");
+        btn.textContent = 'Apply Fix & Verify';
       }
     }
 
+    // Restore Original
     async function restoreOriginal() {
-      const sel = document.getElementById('fileDropdown');
-      const btn = document.getElementById('btnRestore');
-      btn.disabled = true;
+      const targetPath = lastScanData ? lastScanData.file_path : document.getElementById('suiteSelect').value;
+      if (!targetPath) return;
 
       try {
         const res = await fetch('/api/fix', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file_path: sel.value, action: 'restore' })
+          body: JSON.stringify({ file_path: targetPath, action: 'restore' })
         });
         const data = await res.json();
-        btn.disabled = false;
-
-        showAlert("File restored to original unpatched state.", "success");
+        alert('Original test file restored from backup.');
         await loadFiles();
+        document.getElementById('compareWrapper').style.display = 'none';
+        document.getElementById('statHealedCount').textContent = '0';
+        document.getElementById('healStatusText').textContent = 'Restored original test source code.';
       } catch (err) {
-        btn.disabled = false;
-        showAlert("Restore failed: " + err, "error");
+        alert('Failed to restore backup: ' + err.message);
       }
     }
 
-    function escapeHtml(str) {
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
+    document.getElementById('btnScan').addEventListener('click', runScan);
+    document.getElementById('btnApplyFix').addEventListener('click', applyFix);
+    document.getElementById('btnRestore').addEventListener('click', restoreOriginal);
 
-    window.onload = loadFiles;
+    // Initial load
+    window.addEventListener('DOMContentLoaded', loadFiles);
   </script>
 </body>
 </html>
