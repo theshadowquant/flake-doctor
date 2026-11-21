@@ -1,0 +1,41 @@
+--- a/test_patient_zero.py
++++ b/test_patient_zero.py
+@@ -10,17 +10,20 @@
+ PASS_SEED = 0
+ 
+ 
+-def test_01_setup_cache():
+-    SHARED_CACHE["initialized"] = True
+-    os.environ["FLAKY_MODE"] = "ACTIVE"
++def test_01_setup_cache(monkeypatch):
++    monkeypatch.setitem(SHARED_CACHE, "initialized", True)
++    monkeypatch.setenv("FLAKY_MODE", "ACTIVE")
+ 
+ 
+-def test_02_order_dependent_consumer():
++def test_02_order_dependent_consumer(monkeypatch):
++    monkeypatch.setitem(SHARED_CACHE, 'initialized', True)
++    monkeypatch.setenv('FLAKY_MODE', 'ACTIVE')
+     assert SHARED_CACHE.get("initialized") is True
+ 
+ 
+ def test_03_unseeded_ml_threshold():
+-    values = [random.random() for _ in range(10)]
++    random.seed(42)
++    values = [random.random() for _ in range(1000)]  # flakedoctor: seeded and enlarged sample
+     assert sum(values) / len(values) > 0.42
+ 
+ 
+@@ -33,10 +36,11 @@
+ 
+     t = threading.Thread(target=worker)
+     t.start()
+-    time.sleep(0.035)
++    done.wait(timeout=2.0)
+     assert done.is_set()
+     t.join()
+ 
+ 
++# flakedoctor: genuine failure, fix the code under test, not the test
+ def test_05_broken_build_control():
+     assert 2 + 2 == 5
