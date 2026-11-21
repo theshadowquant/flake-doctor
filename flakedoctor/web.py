@@ -9,6 +9,7 @@ import ast
 import json
 import os
 import shutil
+import tempfile
 import time
 import urllib.parse
 from http import HTTPStatus
@@ -1353,9 +1354,11 @@ def _is_safe_test_path(path_str: str) -> bool:
     try:
         p = Path(path_str)
         cwd = Path.cwd().resolve()
+        temp_dir = Path(tempfile.gettempdir()).resolve()
         allowed_dirs = [
             (cwd / "demo_sick_repo").resolve(),
             (cwd / "benchmark_suites").resolve(),
+            temp_dir,
         ]
         resolved = p.resolve() if p.is_absolute() else (cwd / p).resolve()
         for ad in allowed_dirs:
@@ -1442,9 +1445,13 @@ class FlakeDoctorHandler(BaseHTTPRequestHandler):
         file_path_str = req_data.get("file_path")
 
         if custom_code is not None:
-            target_file = Path("benchmark_suites") / "_judge_custom_live.py"
-            target_file.parent.mkdir(exist_ok=True)
-            target_file.write_text(custom_code, encoding="utf-8")
+            try:
+                target_file = Path("benchmark_suites") / "_judge_custom_live.py"
+                target_file.parent.mkdir(exist_ok=True)
+                target_file.write_text(custom_code, encoding="utf-8")
+            except OSError:
+                target_file = Path(tempfile.gettempdir()) / "_judge_custom_live.py"
+                target_file.write_text(custom_code, encoding="utf-8")
         elif file_path_str:
             if not _is_safe_test_path(file_path_str):
                 self._send_json({"error": "Path traversal or forbidden path"}, 400)
@@ -1492,8 +1499,11 @@ class FlakeDoctorHandler(BaseHTTPRequestHandler):
 
         if action == "restore":
             if bak_file.exists():
-                shutil.copy2(bak_file, target_file)
-                bak_file.unlink(missing_ok=True)
+                try:
+                    shutil.copy2(bak_file, target_file)
+                    bak_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
             self._send_json({"status": "restored"})
             return
 
@@ -1509,14 +1519,17 @@ class FlakeDoctorHandler(BaseHTTPRequestHandler):
                 patched_src, diff = build_patch(target_file, before_reports)
 
                 # 3. Backup original if not already backed up
-                if not bak_file.exists():
-                    shutil.copy2(target_file, bak_file)
+                try:
+                    if not bak_file.exists():
+                        shutil.copy2(target_file, bak_file)
+                    target_file.write_text(patched_src, encoding="utf-8")
+                    eval_file = target_file
+                except OSError:
+                    eval_file = Path(tempfile.gettempdir()) / target_file.name
+                    eval_file.write_text(patched_src, encoding="utf-8")
 
-                # 4. Write patched code to target file
-                target_file.write_text(patched_src, encoding="utf-8")
-
-                # 5. Diagnose after
-                after_reports = diagnose(target_file)
+                # 4. Diagnose after
+                after_reports = diagnose(eval_file)
 
                 # Count healed
                 after_map = {r.name: r for r in after_reports}
