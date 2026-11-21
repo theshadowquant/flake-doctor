@@ -157,5 +157,14 @@ def scan(
             )
 
 
+@app.command()
+def web(
+    port: int = typer.Option(8080, "--port", "-p", help="Port to run web console on"),
+) -> None:
+    """Launch the interactive Flake Doctor Web Console."""
+    from .web import run_server
+    run_server(port=port)
+
+
 if __name__ == "__main__":
     app()
