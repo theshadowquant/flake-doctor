@@ -54,7 +54,11 @@ def _render_table(reports: list[TestReport], title: str = "Forensic Autopsy") ->
         if r.findings:
             ast_parts = []
             for f in r.findings[:2]:
-                ast_parts.append(f"L{f.line} [{f.category}]\n{f.prescription}")
+                if r.verdict == "ORDER_DEPENDENT" and r.culprit:
+                    prefix = f"(in culprit {r.culprit}) "
+                else:
+                    prefix = ""
+                ast_parts.append(f"{prefix}L{f.line} [{f.category}]\n{f.prescription}")
             ast_cell = "\n---\n".join(ast_parts)
         else:
             ast_cell = "N/A"
@@ -98,7 +102,7 @@ def scan(
         generated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         data = {
             "generated_at": generated_at,
-            "test_file": str(test_file),
+            "test_file": Path(test_file).as_posix(),
             "results": [r.to_dict() for r in reports],
         }
         json_out.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -111,7 +115,8 @@ def scan(
         console.print("\n[bold cyan]--- Unified Diff (fixes.patch) ---[/bold cyan]")
         syntax = Syntax(udiff, "diff", theme="monokai", line_numbers=False)
         console.print(syntax)
-        Path("fixes.patch").write_text(udiff, encoding="utf-8")
+        with open("fixes.patch", "w", encoding="utf-8", newline="\n") as f:
+            f.write(udiff)
         console.print("[green]Diff written to fixes.patch[/green]")
 
         if verify_fix:
@@ -145,9 +150,10 @@ def scan(
 
             console.print(after_table)
             remaining_bugs = sum(1 for r in after_reports if r.verdict == "BROKEN_BUILD")
+            bug_word = "bug remains" if remaining_bugs == 1 else "bugs remain"
             console.print(
                 f"\n[bold]{healed} of {len(reports)} tests healed, "
-                f"{remaining_bugs} genuine bug(s) remain[/bold]"
+                f"{remaining_bugs} genuine {bug_word}[/bold]"
             )
 
 

@@ -20,23 +20,36 @@ def _find_function_node(tree: ast.Module, func_name: str) -> ast.FunctionDef | N
     return None
 
 
-def _extract_culprit_monkeypatch_lines(source_lines: list[str], culprit_node: ast.FunctionDef) -> list[str]:
-    """Extract and convert state-setting lines from culprit into monkeypatch statements."""
+def _extract_culprit_monkeypatch_lines(culprit_node: ast.FunctionDef) -> Tuple[str, List[str]]:
+    """Extract state-setting lines and determine fixture name with consistent double quotes."""
     lines_to_add: list[str] = []
+    state_name = "cache"
     for stmt in culprit_node.body:
         if isinstance(stmt, ast.Assign):
             for t in stmt.targets:
                 if isinstance(t, ast.Subscript):
-                    # os.environ["K"] = v
-                    val_str = ast.unparse(stmt.value)
-                    if isinstance(t.value, ast.Attribute) and ast.unparse(t.value) == "os.environ":
+                    # Value formatting
+                    if isinstance(stmt.value, ast.Constant):
+                        val_str = f'"{stmt.value.value}"' if isinstance(stmt.value.value, str) else str(stmt.value.value)
+                    else:
+                        val_str = ast.unparse(stmt.value)
+
+                    # Key formatting
+                    if isinstance(t.slice, ast.Constant) and isinstance(t.slice.value, str):
+                        key_str = f'"{t.slice.value}"'
+                    else:
                         key_str = ast.unparse(t.slice)
+
+                    if isinstance(t.value, ast.Attribute) and ast.unparse(t.value) == "os.environ":
                         lines_to_add.append(f'monkeypatch.setenv({key_str}, {val_str})')
                     elif isinstance(t.value, ast.Name):
                         container = t.value.id
-                        key_str = ast.unparse(t.slice)
+                        clean = container.lower().replace("shared_", "")
+                        if clean:
+                            state_name = clean
                         lines_to_add.append(f'monkeypatch.setitem({container}, {key_str}, {val_str})')
-    return lines_to_add
+    fixture_name = f"initialized_{state_name}"
+    return fixture_name, lines_to_add
 
 
 def build_patch(test_file: Path, reports: List[TestReport]) -> Tuple[str, str]:
@@ -60,6 +73,9 @@ def build_patch(test_file: Path, reports: List[TestReport]) -> Tuple[str, str]:
     # Sort test functions from BOTTOM to TOP so modifying lower lines doesn't invalidate line numbers
     test_funcs.sort(key=lambda x: x[0], reverse=True)
 
+    fixtures_to_insert: list[str] = []
+    need_pytest_import = False
+
     for start_line, end_line, name, func_node in test_funcs:
         rep = report_map.get(name)
         if not rep:
@@ -68,70 +84,84 @@ def build_patch(test_file: Path, reports: List[TestReport]) -> Tuple[str, str]:
         verdict = rep.verdict
 
         if verdict == "BROKEN_BUILD":
-            # Add comment line above the test: # flakedoctor: genuine failure, fix the code under test, not the test
+            # Add comment line above the test
             def_idx = start_line - 1
             indent = " " * (len(lines[def_idx]) - len(lines[def_idx].lstrip()))
             comment = f"{indent}# flakedoctor: genuine failure, fix the code under test, not the test\n"
             lines.insert(def_idx, comment)
 
         elif verdict == "POLLUTER":
-            # Rewrite test_01 def signature to include monkeypatch
-            # and rewrite body writes to monkeypatch.setitem / monkeypatch.setenv
+            # Rewrite def signature to include monkeypatch and use double quotes
             func_lines = lines[start_line - 1 : end_line]
             def_line = func_lines[0]
             if "monkeypatch" not in def_line:
-                new_def = re.sub(r"\((.*?)\)", lambda m: f"({m.group(1)}, monkeypatch)" if m.group(1).strip() else "(monkeypatch)", def_line)
+                new_def = re.sub(
+                    r"\((.*?)\)",
+                    lambda m: f"({m.group(1)}, monkeypatch)" if m.group(1).strip() else "(monkeypatch)",
+                    def_line,
+                )
                 func_lines[0] = new_def
 
             new_func_lines = []
             for line in func_lines:
-                # Check for os.environ["..."] = ...
-                m_env = re.search(r'os\.environ\[(.*?)\]\s*=\s*(.*)', line)
-                m_item = re.search(r'([A-Z0-9_]+)\[(.*?)\]\s*=\s*(.*)', line)
+                m_env = re.search(r'os\.environ\[["\'](.*?)["\']\]\s*=\s*["\']?(.*?)["\']?\s*$', line.strip())
+                m_item = re.search(r'([A-Z0-9_]+)\[["\'](.*?)["\']\]\s*=\s*(.*)', line)
                 indent = " " * (len(line) - len(line.lstrip()))
-                if m_env:
-                    k, v = m_env.group(1).strip(), m_env.group(2).strip()
-                    new_func_lines.append(f"{indent}monkeypatch.setenv({k}, {v})\n")
+                if "os.environ[" in line:
+                    m_env_match = re.search(r'os\.environ\[["\'](.*?)["\']\]\s*=\s*(.*)', line)
+                    if m_env_match:
+                        k = m_env_match.group(1).strip()
+                        v = m_env_match.group(2).strip().strip("'\"")
+                        new_func_lines.append(f'{indent}monkeypatch.setenv("{k}", "{v}")\n')
+                    else:
+                        new_func_lines.append(line)
                 elif m_item and not line.strip().startswith("os.environ"):
-                    container, k, v = m_item.group(1).strip(), m_item.group(2).strip(), m_item.group(3).strip()
-                    new_func_lines.append(f"{indent}monkeypatch.setitem({container}, {k}, {v})\n")
+                    container = m_item.group(1).strip()
+                    k = m_item.group(2).strip()
+                    v = m_item.group(3).strip()
+                    new_func_lines.append(f'{indent}monkeypatch.setitem({container}, "{k}", {v})\n')
                 else:
                     new_func_lines.append(line)
 
             lines[start_line - 1 : end_line] = new_func_lines
 
         elif verdict == "ORDER_DEPENDENT":
-            # Add monkeypatch as parameter of the consumer
-            # Insert culprit's state-setting statements at top of consumer's body
+            # For ORDER_DEPENDENT, generate a module-level fixture and add comment above consumer
             culprit_name = rep.culprit
+            fixture_name = "initialized_cache"
             culprit_lines_to_add: list[str] = []
             if culprit_name:
                 c_node = _find_function_node(tree, culprit_name)
                 if c_node:
-                    culprit_lines_to_add = _extract_culprit_monkeypatch_lines(lines, c_node)
+                    fixture_name, culprit_lines_to_add = _extract_culprit_monkeypatch_lines(c_node)
+
+            need_pytest_import = True
+            fixture_body = "\n".join(f"    {stmt}" for stmt in culprit_lines_to_add)
+            fixture_code = f"@pytest.fixture\ndef {fixture_name}(monkeypatch):\n{fixture_body}\n\n\n"
+            if fixture_code not in fixtures_to_insert:
+                fixtures_to_insert.append(fixture_code)
 
             func_lines = lines[start_line - 1 : end_line]
             def_line = func_lines[0]
-            if "monkeypatch" not in def_line:
-                new_def = re.sub(r"\((.*?)\)", lambda m: f"({m.group(1)}, monkeypatch)" if m.group(1).strip() else "(monkeypatch)", def_line)
-                func_lines[0] = new_def
+            # Replace signature to accept fixture_name
+            new_def = re.sub(
+                r"\((.*?)\)",
+                lambda m: f"({m.group(1)}, {fixture_name})" if m.group(1).strip() else f"({fixture_name})",
+                def_line,
+            )
+            func_lines[0] = new_def
 
-            # Find body indentation from first non-def line
-            indent = "    "
-            for l in func_lines[1:]:
-                if l.strip():
-                    indent = " " * (len(l) - len(l.lstrip()))
-                    break
+            # Comment above consumer
+            def_idx = start_line - 1
+            indent = " " * (len(lines[def_idx]) - len(lines[def_idx].lstrip()))
+            comment = f"{indent}# flakedoctor: dependency on {culprit_name} made explicit via fixture\n"
+            func_lines.insert(0, comment)
 
-            # Insert culprit setup statements at top of body
-            insertions = [f"{indent}{stmt}\n" for stmt in culprit_lines_to_add]
-            new_func_lines = [func_lines[0]] + insertions + func_lines[1:]
-            lines[start_line - 1 : end_line] = new_func_lines
+            lines[start_line - 1 : end_line] = func_lines
 
         elif verdict == "FLAKY_PRNG":
             # Insert random.seed(42) as first body line
             # If literal range(10) in sampling comprehension, change to range(1000)
-            # Add # flakedoctor: seeded and enlarged sample as trailing comment
             func_lines = lines[start_line - 1 : end_line]
             indent = "    "
             for l in func_lines[1:]:
@@ -152,9 +182,6 @@ def build_patch(test_file: Path, reports: List[TestReport]) -> Tuple[str, str]:
 
         elif verdict == "FLAKY_TIMING":
             # If function assigns X = threading.Event(), replace MAIN-thread time.sleep(...) line
-            # (the one after .start()) with X.wait(timeout=2.0)
-            # Else if assigns threading.Thread to T, replace with T.join(timeout=2.0)
-            # Leave worker sleep untouched
             func_lines = lines[start_line - 1 : end_line]
             event_name = None
             thread_name = None
@@ -187,12 +214,37 @@ def build_patch(test_file: Path, reports: List[TestReport]) -> Tuple[str, str]:
 
             lines[start_line - 1 : end_line] = new_func_lines
 
+    # Insert module-level fixtures above the first test
+    if fixtures_to_insert:
+        # Find line number of the first test
+        min_test_line = min(t[0] for t in test_funcs)
+        # Find where to place fixture (above first test)
+        insert_idx = min_test_line - 1
+        all_fixtures = "".join(reversed(fixtures_to_insert))
+        lines.insert(insert_idx, all_fixtures)
+
+    # Insert import pytest if needed and missing
+    if need_pytest_import and not any("import pytest" in l for l in lines):
+        # Insert after existing imports
+        last_import_idx = 0
+        for i, l in enumerate(lines):
+            if l.startswith("import ") or l.startswith("from "):
+                last_import_idx = i + 1
+        lines.insert(last_import_idx, "import pytest\n")
+
     patched_source = "".join(lines)
+
+    # Calculate path relative to repo root
+    try:
+        rel_path = test_file.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        rel_path = test_file.as_posix()
+
     diff = list(difflib.unified_diff(
         original_source.splitlines(keepends=True),
         patched_source.splitlines(keepends=True),
-        fromfile=f"a/{test_file.name}",
-        tofile=f"b/{test_file.name}",
+        fromfile=f"a/{rel_path}",
+        tofile=f"b/{rel_path}",
     ))
     unified_diff = "".join(diff)
     return patched_source, unified_diff

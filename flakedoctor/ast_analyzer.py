@@ -82,6 +82,31 @@ def analyze_test(source_path: str | Path, func_name: str) -> List[AstFinding]:
     findings: List[AstFinding] = []
 
     class _Visitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            super().__init__()
+            self._nested_depth = 0
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            if node is func_node:
+                self.generic_visit(node)
+            else:
+                self._nested_depth += 1
+                self.generic_visit(node)
+                self._nested_depth -= 1
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            if node is func_node:
+                self.generic_visit(node)
+            else:
+                self._nested_depth += 1
+                self.generic_visit(node)
+                self._nested_depth -= 1
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            self._nested_depth += 1
+            self.generic_visit(node)
+            self._nested_depth -= 1
+
         def visit_Call(self, node: ast.Call) -> None:
             name = _dotted_name(node.func)
 
@@ -106,15 +131,16 @@ def analyze_test(source_path: str | Path, func_name: str) -> List[AstFinding]:
 
             # --- TIMING_RACE ---
             if name in ("time.sleep", "sleep"):
-                snippet = source_lines[node.lineno - 1].strip() if node.lineno <= len(source_lines) else ""
-                findings.append(AstFinding(
-                    line=node.lineno,
-                    category="TIMING_RACE",
-                    code_snippet=snippet,
-                    prescription=(
-                        "Replace time.sleep with thread.join(timeout=2.0) or threading.Event.wait()."
-                    ),
-                ))
+                if self._nested_depth == 0:
+                    snippet = source_lines[node.lineno - 1].strip() if node.lineno <= len(source_lines) else ""
+                    findings.append(AstFinding(
+                        line=node.lineno,
+                        category="TIMING_RACE",
+                        code_snippet=snippet,
+                        prescription=(
+                            "Replace time.sleep with thread.join(timeout=2.0) or threading.Event.wait()."
+                        ),
+                    ))
 
             # --- CLOCK_DEPENDENCY ---
             if name.endswith(("datetime.now", "datetime.utcnow", "date.today", "time.time")):
