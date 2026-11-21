@@ -6,20 +6,28 @@ Light-mode warm peach/cream/sage editorial UI.
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 import shutil
 import tempfile
+import threading
 import time
 import urllib.parse
+import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .ast_analyzer import analyze_test
 from .engine import TestReport, diagnose
-from .patcher import build_patch
+from .patcher import build_patch, verify_fix
+
+try:
+    from .engine import ENGINE_VERSION
+except ImportError:
+    ENGINE_VERSION = "1.0.0"
 
 
 HTML_PAGE_TEMPLATE = r"""<!DOCTYPE html>
@@ -747,6 +755,7 @@ HTML_PAGE_TEMPLATE = r"""<!DOCTYPE html>
       <a href="#" id="toggleEditorLink" class="toggle-editor-link">Switch to Custom Live Code Editor</a>
 
       <textarea id="customCodeArea" class="code-box" placeholder="# Paste or inspect pytest code here..."></textarea>
+      <div id="customCodeWarning" style="font-size: 0.75rem; color: #6B7280; margin-top: 4px; display: none;">Custom code runs on this machine. Local use only.</div>
 
       <div class="btn-row">
         <button id="btnScan" class="btn-primary">
@@ -855,23 +864,32 @@ HTML_PAGE_TEMPLATE = r"""<!DOCTYPE html>
       });
     });
 
-    // Editor toggle
+    // Editor permissions and toggle
+    const allowCustomCode = __ALLOW_CUSTOM_CODE__;
     const toggleEditorLink = document.getElementById('toggleEditorLink');
     const customCodeArea = document.getElementById('customCodeArea');
+    const customCodeWarning = document.getElementById('customCodeWarning');
     const suiteSelect = document.getElementById('suiteSelect');
-    let isEditorVisible = true;
+    let isEditorVisible = allowCustomCode;
 
-    toggleEditorLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      isEditorVisible = !isEditorVisible;
-      if (isEditorVisible) {
-        customCodeArea.style.display = 'block';
-        toggleEditorLink.textContent = 'Hide Custom Live Code Editor';
-      } else {
-        customCodeArea.style.display = 'none';
-        toggleEditorLink.textContent = 'Switch to Custom Live Code Editor';
-      }
-    });
+    if (!allowCustomCode) {
+      if (toggleEditorLink) toggleEditorLink.style.display = 'none';
+      if (customCodeArea) customCodeArea.style.display = 'none';
+      if (customCodeWarning) customCodeWarning.style.display = 'none';
+    } else {
+      if (customCodeWarning) customCodeWarning.style.display = 'block';
+      toggleEditorLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        isEditorVisible = !isEditorVisible;
+        if (isEditorVisible) {
+          customCodeArea.style.display = 'block';
+          toggleEditorLink.textContent = 'Hide Custom Live Code Editor';
+        } else {
+          customCodeArea.style.display = 'none';
+          toggleEditorLink.textContent = 'Switch to Custom Live Code Editor';
+        }
+      });
+    }
 
     // Load available files on startup
     async function loadFiles() {
@@ -970,7 +988,7 @@ HTML_PAGE_TEMPLATE = r"""<!DOCTYPE html>
         const selectedPath = suiteSelect.value;
         const matching = currentFiles.find(f => f.path === selectedPath);
 
-        if (matching && matching.content.trim() === customCodeArea.value.trim()) {
+        if (!allowCustomCode || (matching && matching.content.trim() === customCodeArea.value.trim())) {
           payload.file_path = selectedPath;
         } else {
           payload.custom_code = customCodeArea.value;
@@ -987,22 +1005,46 @@ HTML_PAGE_TEMPLATE = r"""<!DOCTYPE html>
         });
         clearTimeout(timeoutId);
 
-        const data = await res.json();
-        stopTimer();
+        let data = await res.json();
 
         if (data.error) {
+          stopTimer();
           const statusText = document.getElementById('card3StatusText');
           statusText.style.color = '#991B1B';
           statusText.textContent = `Error: ${data.error}`;
           return;
         }
 
+        if (data.status === 'running' && data.job_id) {
+          const jobId = data.job_id;
+          while (true) {
+            await new Promise(r => setTimeout(r, 1000));
+            const pollRes = await fetch('/api/scan/' + jobId);
+            const pollData = await pollRes.json();
+            if (pollData.progress) {
+              const statusText = document.getElementById('card3StatusText');
+              statusText.textContent = `Step ${pollData.progress.step}/5: ${pollData.progress.phase} (${secondsElapsed}s)`;
+            }
+            if (pollData.status === 'done') {
+              data = pollData;
+              break;
+            } else if (pollData.status === 'error') {
+              throw new Error(pollData.error || 'Scan failed');
+            }
+          }
+        }
+        stopTimer();
+
         lastScanData = data;
         renderScanResults(data);
 
         const statusText = document.getElementById('card3StatusText');
         statusText.style.color = '#14532D';
-        statusText.textContent = 'Autopsy Ready';
+        if (data.cached) {
+          statusText.textContent = 'Autopsy Ready (Cached)';
+        } else {
+          statusText.textContent = 'Autopsy Ready';
+        }
       } catch (err) {
         stopTimer();
         const statusText = document.getElementById('card3StatusText');
@@ -1043,16 +1085,18 @@ HTML_PAGE_TEMPLATE = r"""<!DOCTYPE html>
         const cleanEl = document.createElement('div');
         cleanEl.className = 'col-confidence-clean';
 
-        const confRuns = (r.confidence_runs !== undefined && r.confidence_runs !== null) 
-          ? r.confidence_runs 
-          : r.est_clean_runs_99;
+        const confRuns = (r.conservative_clean_runs !== undefined && r.conservative_clean_runs !== null)
+          ? r.conservative_clean_runs
+          : ((r.confidence_runs !== undefined && r.confidence_runs !== null) 
+            ? r.confidence_runs 
+            : r.est_clean_runs_99);
 
         if (r.verdict === 'ORDER_DEPENDENT') {
           cleanEl.textContent = 'Deterministic';
         } else if (r.verdict === 'STABLE' || r.verdict === 'BROKEN_BUILD') {
           cleanEl.textContent = '-';
         } else if (confRuns !== undefined && confRuns !== null) {
-          cleanEl.textContent = `${confRuns} clean runs (est.)`;
+          cleanEl.textContent = `${confRuns} clean runs (99%, cons.)`;
         } else {
           cleanEl.textContent = '-';
         }
@@ -1060,7 +1104,13 @@ HTML_PAGE_TEMPLATE = r"""<!DOCTYPE html>
         const failEl = document.createElement('div');
         failEl.className = 'col-confidence-fail';
         const failRate = r.sweep_fail_rate !== undefined ? (r.sweep_fail_rate * 100).toFixed(0) : '0';
-        failEl.textContent = `${failRate}% fail (est.)`;
+        if (r.ci_low !== undefined && r.ci_high !== undefined && r.verdict !== 'STABLE' && r.verdict !== 'BROKEN_BUILD' && r.verdict !== 'ORDER_DEPENDENT') {
+          const lowPct = (r.ci_low * 100).toFixed(0);
+          const highPct = (r.ci_high * 100).toFixed(0);
+          failEl.textContent = `${failRate}% fail (95% CI ${lowPct}%-${highPct}%)`;
+        } else {
+          failEl.textContent = `${failRate}% fail (est.)`;
+        }
 
         colLeft.appendChild(cleanEl);
         colLeft.appendChild(failEl);
@@ -1362,8 +1412,14 @@ def _is_safe_test_path(path_str: str) -> bool:
         ]
         resolved = p.resolve() if p.is_absolute() else (cwd / p).resolve()
         for ad in allowed_dirs:
-            if resolved == ad or ad in resolved.parents:
+            if resolved == ad:
                 return True
+            try:
+                if resolved.is_relative_to(ad):
+                    return True
+            except AttributeError:
+                if ad in resolved.parents:
+                    return True
         return False
     except Exception:
         return False
@@ -1386,6 +1442,103 @@ def _get_all_test_files() -> List[Dict[str, str]]:
                 except Exception:
                     pass
     return results
+
+
+CACHE_DIR = Path(".flakecache")
+JOBS: Dict[str, Dict[str, Any]] = {}
+SCAN_LOCK = threading.Lock()
+IS_SCAN_RUNNING = False
+
+
+def _get_cache_key(content: str) -> str:
+    key_src = (content + ENGINE_VERSION).encode("utf-8")
+    return hashlib.sha256(key_src).hexdigest()
+
+
+def _read_cache(cache_key: str) -> Optional[Dict[str, Any]]:
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    if cache_file.exists():
+        try:
+            return json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+    return None
+
+
+def _write_cache(cache_key: str, data: Dict[str, Any]) -> None:
+    CACHE_DIR.mkdir(exist_ok=True)
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    try:
+        cache_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _run_scan_job(job_id: str, target_file: Path, content: str, cache_key: str) -> None:
+    global IS_SCAN_RUNNING
+    t0 = time.monotonic()
+    try:
+        def on_progress(phase: str, step: int, total: int) -> None:
+            with SCAN_LOCK:
+                if job_id in JOBS:
+                    JOBS[job_id]["progress"] = {
+                        "phase": phase,
+                        "step": step,
+                        "total": total,
+                        "elapsed": round(time.monotonic() - t0, 1),
+                    }
+
+        reports = diagnose(target_file, progress_callback=on_progress)
+        _, diff = build_patch(target_file, reports)
+        elapsed = time.monotonic() - t0
+        sub_count = getattr(reports[0], "_subprocess_count", 0) if reports else 0
+        timings = getattr(reports[0], "_timings", {}) if reports else {}
+
+        result = {
+            "results": [r.to_dict() for r in reports],
+            "diff": diff,
+            "file_path": target_file.as_posix(),
+            "scan_time": round(elapsed, 2),
+            "subprocess_count": sub_count,
+            "timings": timings,
+        }
+        _write_cache(cache_key, result)
+
+        with SCAN_LOCK:
+            JOBS[job_id]["status"] = "done"
+            JOBS[job_id]["result"] = result
+    except Exception as e:
+        with SCAN_LOCK:
+            JOBS[job_id]["status"] = "error"
+            JOBS[job_id]["error"] = str(e)
+    finally:
+        with SCAN_LOCK:
+            IS_SCAN_RUNNING = False
+
+
+def _prewarm_cache() -> None:
+    demo_path = Path("demo_sick_repo/test_patient_zero.py")
+    if demo_path.exists():
+        try:
+            content = demo_path.read_text(encoding="utf-8")
+            ck = _get_cache_key(content)
+            if _read_cache(ck) is None:
+                reports = diagnose(demo_path)
+                _, diff = build_patch(demo_path, reports)
+                sub_count = getattr(reports[0], "_subprocess_count", 0) if reports else 0
+                timings = getattr(reports[0], "_timings", {}) if reports else {}
+                elapsed = getattr(reports[0], "_scan_elapsed", 0.0) if reports else 0.0
+                result = {
+                    "results": [r.to_dict() for r in reports],
+                    "diff": diff,
+                    "file_path": demo_path.as_posix(),
+                    "scan_time": round(elapsed, 2),
+                    "subprocess_count": sub_count,
+                    "timings": timings,
+                }
+                _write_cache(ck, result)
+        except Exception:
+            pass
 
 
 class FlakeDoctorHandler(BaseHTTPRequestHandler):
@@ -1415,17 +1568,41 @@ class FlakeDoctorHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/" or parsed.path == "/index.html":
-            html_content = HTML_PAGE_TEMPLATE.replace("__PAGE_TITLE__", "Flake Doctor | Forensic Test Diagnostics")
+            allow_custom = "true" if os.environ.get("FD_ALLOW_CUSTOM_CODE", "0") == "1" else "false"
+            html_content = (
+                HTML_PAGE_TEMPLATE
+                .replace("__PAGE_TITLE__", "Flake Doctor | Forensic Test Diagnostics")
+                .replace("__ALLOW_CUSTOM_CODE__", allow_custom)
+            )
             self._send_html(html_content)
         elif parsed.path == "/api/files":
             files = _get_all_test_files()
             self._send_json({"files": files})
+        elif parsed.path.startswith("/api/scan/"):
+            job_id = parsed.path[len("/api/scan/"):].strip()
+            with SCAN_LOCK:
+                job = JOBS.get(job_id)
+            if not job:
+                self._send_json({"error": "Job not found"}, 404)
+            elif job["status"] == "done":
+                res_data = dict(job["result"])
+                res_data["job_id"] = job_id
+                res_data["status"] = "done"
+                self._send_json(res_data, 200)
+            elif job["status"] == "error":
+                self._send_json({"job_id": job_id, "status": "error", "error": job.get("error", "Unknown error")}, 500)
+            else:
+                self._send_json({"job_id": job_id, "status": "running", "progress": job.get("progress")}, 200)
         else:
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > 20 * 1024:
+            self._send_json({"error": "payload too large (max 20KB)"}, 413)
+            return
+
         body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
         try:
             req_data = json.loads(body)
@@ -1443,44 +1620,75 @@ class FlakeDoctorHandler(BaseHTTPRequestHandler):
     def _handle_scan(self, req_data: Dict[str, Any]) -> None:
         custom_code = req_data.get("custom_code")
         file_path_str = req_data.get("file_path")
+        bypass_cache = bool(req_data.get("bypass_cache", False))
 
         if custom_code is not None:
-            try:
-                target_file = Path("benchmark_suites") / "_judge_custom_live.py"
-                target_file.parent.mkdir(exist_ok=True)
-                target_file.write_text(custom_code, encoding="utf-8")
-            except OSError:
-                target_file = Path(tempfile.gettempdir()) / "_judge_custom_live.py"
-                target_file.write_text(custom_code, encoding="utf-8")
+            # Check if custom code execution is allowed
+            if os.environ.get("FD_ALLOW_CUSTOM_CODE", "0") != "1":
+                self._send_json({"error": "custom code disabled on this deployment"}, 403)
+                return
+
+            # Validate client IP (localhost only)
+            client_ip = self.client_address[0]
+            if client_ip not in ("127.0.0.1", "localhost", "::1"):
+                self._send_json({"error": "custom code only permitted from localhost"}, 403)
+                return
+
+            # Execute in tempdir with minimal env
+            os.environ["FD_MINIMAL_ENV"] = "1"
+            tmp_custom_dir = Path(tempfile.mkdtemp(prefix="fd_custom_"))
+            target_file = tmp_custom_dir / "custom_test.py"
+            target_file.write_text(custom_code, encoding="utf-8")
+            content = custom_code
         elif file_path_str:
             if not _is_safe_test_path(file_path_str):
                 self._send_json({"error": "Path traversal or forbidden path"}, 400)
                 return
             target_file = Path(file_path_str)
+            if not target_file.exists():
+                self._send_json({"error": f"File not found: {target_file}"}, 404)
+                return
+            content = target_file.read_text(encoding="utf-8")
         else:
             self._send_json({"error": "Missing file_path or custom_code"}, 400)
             return
 
-        if not target_file.exists():
-            self._send_json({"error": f"File not found: {target_file}"}, 404)
-            return
+        cache_key = _get_cache_key(content)
+        job_id = str(uuid.uuid4())
 
-        t0 = time.monotonic()
-        try:
-            reports = diagnose(target_file)
-            _, diff = build_patch(target_file, reports)
-            elapsed = time.monotonic() - t0
-            sub_count = getattr(reports[0], "_subprocess_count", 0) if reports else 0
+        # Check cache if not bypassed
+        if not bypass_cache:
+            cached_result = _read_cache(cache_key)
+            if cached_result is not None:
+                res_data = dict(cached_result)
+                res_data["cached"] = True
+                res_data["job_id"] = job_id
+                res_data["status"] = "done"
+                with SCAN_LOCK:
+                    JOBS[job_id] = {"status": "done", "result": res_data, "progress": None}
+                self._send_json(res_data, 200)
+                return
 
-            self._send_json({
-                "results": [r.to_dict() for r in reports],
-                "diff": diff,
-                "file_path": target_file.as_posix(),
-                "scan_time": elapsed,
-                "subprocess_count": sub_count,
-            })
-        except Exception as e:
-            self._send_json({"error": str(e)}, 500)
+        # Concurrency check
+        global IS_SCAN_RUNNING
+        with SCAN_LOCK:
+            if IS_SCAN_RUNNING:
+                self._send_json({"error": "scan in progress, try again later"}, 409)
+                return
+            IS_SCAN_RUNNING = True
+            JOBS[job_id] = {
+                "status": "running",
+                "progress": {"phase": "starting", "step": 0, "total": 5, "elapsed": 0.0},
+            }
+
+        worker = threading.Thread(
+            target=_run_scan_job,
+            args=(job_id, target_file, content, cache_key),
+            daemon=True,
+        )
+        worker.start()
+
+        self._send_json({"job_id": job_id, "status": "running"}, 202)
 
     def _handle_fix(self, req_data: Dict[str, Any]) -> None:
         file_path_str = req_data.get("file_path")
@@ -1519,17 +1727,15 @@ class FlakeDoctorHandler(BaseHTTPRequestHandler):
                 patched_src, diff = build_patch(target_file, before_reports)
 
                 # 3. Backup original if not already backed up
-                try:
-                    if not bak_file.exists():
-                        shutil.copy2(target_file, bak_file)
-                    target_file.write_text(patched_src, encoding="utf-8")
-                    eval_file = target_file
-                except OSError:
-                    eval_file = Path(tempfile.gettempdir()) / target_file.name
-                    eval_file.write_text(patched_src, encoding="utf-8")
+                if not bak_file.exists():
+                    shutil.copy2(target_file, bak_file)
 
-                # 4. Diagnose after
-                after_reports = diagnose(eval_file)
+                # 4. Fix verification on patched source
+                vres = verify_fix(target_file, patched_src, before_reports=before_reports)
+                after_reports = vres.reports
+
+                # Write patched source to target file
+                target_file.write_text(patched_src, encoding="utf-8")
 
                 # Count healed
                 after_map = {r.name: r for r in after_reports}
@@ -1545,9 +1751,12 @@ class FlakeDoctorHandler(BaseHTTPRequestHandler):
                     "status": "applied",
                     "before": [r.to_dict() for r in before_reports],
                     "after": [r.to_dict() for r in after_reports],
-                    "diff": diff,
+                    "diff": vres.diff or diff,
                     "healed": healed,
                     "remaining_bugs": remaining_bugs,
+                    "verified_file": vres.verified_file,
+                    "patched_sha256": vres.patched_sha256,
+                    "outcomes": vres.outcomes,
                 })
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
@@ -1558,6 +1767,8 @@ def run_server(port: int = 8080) -> None:
     server_address = ("127.0.0.1", port)
     httpd = ThreadingHTTPServer(server_address, FlakeDoctorHandler)
     print(f"Flake Doctor Web Console running at http://127.0.0.1:{port}")
+    # Pre-warm cache for demo test file in background
+    threading.Thread(target=_prewarm_cache, daemon=True).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

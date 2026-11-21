@@ -1,3 +1,4 @@
+# Heuristic suggestion. Review before applying.
 --- a/demo_sick_repo/test_patient_zero.py
 +++ b/demo_sick_repo/test_patient_zero.py
 @@ -3,6 +3,7 @@

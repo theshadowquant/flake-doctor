@@ -2,14 +2,35 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass, field
 import difflib
+import hashlib
 import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .engine import TestReport, diagnose
+
+
+@dataclass
+class VerificationResult:
+    """Result of fix verification on patched source."""
+    reports: List[TestReport]
+    verified_file: str
+    patched_sha256: str
+    outcomes: Dict[str, str] = field(default_factory=dict)
+    diff: str = ""
+
+    def __iter__(self):
+        return iter(self.reports)
+
+    def __getitem__(self, item):
+        return self.reports[item]
+
+    def __len__(self):
+        return len(self.reports)
 
 
 def _find_function_node(tree: ast.Module, func_name: str) -> ast.FunctionDef | None:
@@ -234,6 +255,12 @@ def build_patch(test_file: Path, reports: List[TestReport]) -> Tuple[str, str]:
 
     patched_source = "".join(lines)
 
+    # Validate AST of patched code before returning
+    try:
+        ast.parse(patched_source)
+    except SyntaxError as e:
+        raise ValueError(f"Generated patch produces invalid Python syntax: {e}")
+
     # Calculate path relative to repo root
     try:
         rel_path = test_file.resolve().relative_to(Path.cwd().resolve()).as_posix()
@@ -246,17 +273,77 @@ def build_patch(test_file: Path, reports: List[TestReport]) -> Tuple[str, str]:
         fromfile=f"a/{rel_path}",
         tofile=f"b/{rel_path}",
     ))
-    unified_diff = "".join(diff)
+    diff_text = "".join(diff)
+    header = "# Heuristic suggestion. Review before applying.\n"
+    unified_diff = (header + diff_text) if diff_text else ""
     return patched_source, unified_diff
 
 
-def verify_fix(test_file: Path, patched_source: str) -> List[TestReport]:
-    """Write patched source to temp dir as patched_<name>.py and diagnose."""
+def verify_fix(
+    test_file: Path,
+    patched_source: str,
+    before_reports: Optional[List[TestReport]] = None,
+) -> VerificationResult:
+    """Write patched source to temp dir as patched_<name>.py, assert SHA matches, and diagnose.
+
+    Verifies execution path, labels tests (healed/unchanged/worse), and excludes worse hunks.
+    """
+    test_file = Path(test_file)
+    ast.parse(patched_source)
+
+    patched_sha256 = hashlib.sha256(patched_source.encode("utf-8")).hexdigest()
     tmpdir = Path(tempfile.mkdtemp(prefix="fd_verify_"))
-    try:
-        patched_path = tmpdir / f"patched_{test_file.name}"
-        patched_path.write_text(patched_source, encoding="utf-8")
-        reports = diagnose(patched_path)
-        return reports
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    patched_path = tmpdir / f"patched_{test_file.name}"
+    patched_path.write_bytes(patched_source.encode("utf-8"))
+
+    disk_sha256 = hashlib.sha256(patched_path.read_bytes()).hexdigest()
+    assert disk_sha256 == patched_sha256, "Patched file on disk does not match memory content"
+
+    reports = diagnose(patched_path)
+
+    for r in reports:
+        assert getattr(r, "_executed_file", None) == str(patched_path)
+
+    outcomes: Dict[str, str] = {}
+    worse_tests: List[str] = []
+    if before_reports:
+        before_map = {r.name: r for r in before_reports}
+        for r in reports:
+            b = before_map.get(r.name)
+            if not b:
+                outcomes[r.name] = "unchanged" if r.verdict == "STABLE" else "worse"
+                continue
+            if b.verdict != "STABLE" and r.verdict == "STABLE":
+                outcomes[r.name] = "healed"
+            elif (b.verdict == "STABLE" and r.verdict != "STABLE") or (b.verdict != "BROKEN_BUILD" and r.verdict == "BROKEN_BUILD"):
+                outcomes[r.name] = "worse"
+                worse_tests.append(r.name)
+            else:
+                outcomes[r.name] = "unchanged"
+
+        if worse_tests:
+            # Exclude worse test hunks
+            safe_reports = [r for r in before_reports if r.name not in worse_tests]
+            safe_src, safe_diff = build_patch(test_file, safe_reports)
+            patched_path.write_bytes(safe_src.encode("utf-8"))
+            reports = diagnose(patched_path)
+            patched_sha256 = hashlib.sha256(safe_src.encode("utf-8")).hexdigest()
+            return VerificationResult(
+                reports=reports,
+                verified_file=str(patched_path),
+                patched_sha256=patched_sha256,
+                outcomes=outcomes,
+                diff=safe_diff,
+            )
+
+    diff = ""
+    if before_reports:
+        _, diff = build_patch(test_file, before_reports)
+
+    return VerificationResult(
+        reports=reports,
+        verified_file=str(patched_path),
+        patched_sha256=patched_sha256,
+        outcomes=outcomes,
+        diff=diff,
+    )

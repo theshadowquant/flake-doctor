@@ -41,7 +41,7 @@ def _render_table(reports: list[TestReport], title: str = "Forensic Autopsy") ->
     table.add_column("Verdict", min_width=16)
     table.add_column("Root Cause & Culprit Predecessor", min_width=35)
     table.add_column("AST Line & Code Prescription", min_width=32)
-    table.add_column("Est. Clean Runs (99%)", min_width=10)
+    table.add_column("Est. clean runs (99%, conservative)", min_width=10)
 
     for r in reports:
         color = VERDICT_COLORS.get(r.verdict, "white")
@@ -50,6 +50,12 @@ def _render_table(reports: list[TestReport], title: str = "Forensic Autopsy") ->
         root_cause_cell = r.root_cause
         if r.culprit:
             root_cause_cell += f"\nCulprit: {r.culprit}"
+
+        if r.verdict in ("FLAKY_PRNG", "FLAKY_TIMING") and r.ci_low is not None and r.ci_high is not None:
+            pct = int(round(r.sweep_fail_rate * 100))
+            low_pct = int(round(r.ci_low * 100))
+            high_pct = int(round(r.ci_high * 100))
+            root_cause_cell += f"\nest. {pct}% fail (95% CI {low_pct}%-{high_pct}%)"
 
         if r.findings:
             ast_parts = []
@@ -63,7 +69,7 @@ def _render_table(reports: list[TestReport], title: str = "Forensic Autopsy") ->
         else:
             ast_cell = "N/A"
 
-        conf_cell = str(r.confidence_runs) if r.confidence_runs is not None else "N/A"
+        conf_cell = str(r.conservative_clean_runs) if r.conservative_clean_runs is not None else "N/A"
 
         table.add_row(r.name, verdict_cell, root_cause_cell, ast_cell, conf_cell)
 
@@ -81,6 +87,7 @@ def scan(
     ),
     patch: bool = typer.Option(False, "--patch", help="Generate and display unified diff of fixes."),
     verify_fix: bool = typer.Option(False, "--verify-fix", help="Apply fixes to temp copy and show Before/After table."),
+    fail_on_flaky: bool = typer.Option(False, "--fail-on-flaky", help="Exit code 1 if any test is not STABLE."),
 ) -> None:
     """Scan a test file and produce a Forensic Autopsy report."""
     console.print(f"\n[bold cyan]Flake Doctor[/bold cyan] scanning: {test_file}\n")
@@ -97,6 +104,12 @@ def scan(
     console.print(
         f"\n[dim]Scan completed in {elapsed:.1f}s | {sub_count} subprocess calls[/dim]"
     )
+
+    timings = getattr(reports[0], "_timings", None) if reports else None
+    if timings:
+        from .engine import format_timings_table
+        console.print("\n[bold]Phase Timings:[/bold]")
+        console.print(format_timings_table(timings))
 
     if json_out is not None:
         generated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()

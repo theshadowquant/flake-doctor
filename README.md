@@ -77,3 +77,10 @@ For example:
 - **Framework Support**: Currently tailored specifically for `pytest` test runners.
 - **AST Pattern Scope**: Static code analysis detects common Python flakiness patterns (unseeded `random`, bare `time.sleep`, global dict mutation, unmocked system clocks); domain-specific or C-extension race conditions may require custom synchronization logic.
 - **Patching Suggestions**: Auto-patcher rewrites represent high-fidelity heuristic recommendations; developers should review proposed diffs before committing to mission-critical test suites.
+
+## Roadmap
+
+- **Multi-Polluter Delta Debugging**: Generalizing binary bisection to Zeller-style Delta Debugging ($DDmin$) to resolve compound pollution where multiple antecedent tests collectively corrupt test environment state.
+- **Intelligent Quarantine Mode**: CI integration to automatically isolate confirmed flaky tests into a separate non-blocking execution lane while generating tracking issues and forensic autopsy cards.
+- **Automated Pull Request Integration**: GitHub App / GitLab Bot integration that opens an automated healing pull request with unified AST diffs and before/after verification receipts upon flake detection.
+- **Power Analysis & Bayesian Confidence Modeling**: Incorporating formal statistical power analysis and Bayesian updating across consecutive CI runs to dynamically adapt sample sizes during seed and stress jitter phases.

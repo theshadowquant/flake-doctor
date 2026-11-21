@@ -13,7 +13,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from rich.console import Console
 from rich.status import Status
@@ -29,6 +29,33 @@ SEEDS = [0, 1, 7, 42, 99, 1337, 2026, 9999]
 PASS_SEED = 0  # mean > 0.42 -> test_03 passes when seeded with this
 
 # ---------------------------------------------------------------------------
+# Wilson Score Interval and Conservative Bounds
+# ---------------------------------------------------------------------------
+
+def wilson_score_interval(fails: int, runs: int, z: float = 1.96) -> Tuple[float, float]:
+    """Compute the Wilson 95% confidence interval for failure rate from (fails, runs)."""
+    if runs <= 0:
+        return 0.0, 0.0
+    p = fails / runs
+    denom = 1 + (z ** 2) / runs
+    center = (p + (z ** 2) / (2 * runs)) / denom
+    halfwidth = (z * math.sqrt((p * (1 - p)) / runs + (z ** 2) / (4 * (runs ** 2)))) / denom
+    ci_low = max(0.0, center - halfwidth)
+    ci_high = min(1.0, center + halfwidth)
+    return round(ci_low, 3), round(ci_high, 3)
+
+
+def conservative_clean_runs(ci_low: float) -> Optional[int]:
+    """Conservative clean runs using lower bound of 95% CI: ceil(ln(0.01) / ln(1 - ci_low)). None if <=0 or >=1."""
+    if ci_low <= 0.0 or ci_low >= 1.0:
+        return None
+    try:
+        return math.ceil(math.log(0.01) / math.log(1 - ci_low))
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
 
@@ -42,6 +69,9 @@ class TestReport:
     runs: int
     findings: List[AstFinding] = field(default_factory=list)
     confidence_runs: Optional[int] = None
+    ci_low: Optional[float] = None
+    ci_high: Optional[float] = None
+    conservative_clean_runs: Optional[int] = None
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +91,9 @@ class TestReport:
                 for f in self.findings
             ],
             "confidence_runs": self.confidence_runs,
+            "ci_low": self.ci_low,
+            "ci_high": self.ci_high,
+            "conservative_clean_runs": self.conservative_clean_runs,
         }
 
 
@@ -115,7 +148,13 @@ def _write_plugin(tmpdir: Path) -> None:
 
 
 def _build_env(env_extra: Dict[str, str]) -> Dict[str, str]:
-    env = os.environ.copy()
+    if os.environ.get("FD_MINIMAL_ENV") == "1":
+        allowed_keys = {
+            "PATH", "SYSTEMROOT", "TEMP", "TMP", "PYTHONPATH", "PYTHONIOENCODING"
+        }
+        env = {k: v for k, v in os.environ.items() if k.upper() in allowed_keys or k.startswith("FD_")}
+    else:
+        env = os.environ.copy()
     env.update(env_extra)
     return env
 
@@ -162,11 +201,12 @@ def _run_pytest(
         "-p", "_fd_plugin",
         f"--junitxml={xml_path}",
     ]
+    cwd_to_use = str(Path(tempfile.gettempdir())) if os.environ.get("FD_MINIMAL_ENV") == "1" else str(project_root)
     try:
         subprocess.run(
             cmd,
             env=env,
-            cwd=str(project_root),
+            cwd=cwd_to_use,
             timeout=120,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -222,14 +262,43 @@ def _bisect_polluter(
     return candidates[0].split("::")[-1] if candidates else None
 
 
+def format_timings_table(timings: Dict[str, float]) -> str:
+    """Format phase timings as an ASCII table."""
+    lines = [
+        "+---------------------------------------+",
+        "| Phase                 | Duration (s)  |",
+        "+---------------------------------------+",
+    ]
+    for k in ["suite_baseline", "isolated", "seed_sweep", "stress_sweep", "bisect", "ast_analysis"]:
+        if k in timings:
+            lines.append(f"| {k:<21} | {timings[k]:>13.3f} |")
+    lines.append("+---------------------------------------+")
+    lines.append(f"| {'total':<21} | {timings.get('total', 0.0):>13.3f} |")
+    lines.append("+---------------------------------------+")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Main diagnosis entry point
 # ---------------------------------------------------------------------------
 
-def diagnose(test_file: str | Path) -> List[TestReport]:
+def diagnose(
+    test_file: str | Path,
+    progress_callback: Optional[Callable[[str, int, int], None]] = None,
+) -> List[TestReport]:
     test_file = Path(test_file).resolve()
     project_root = Path.cwd()
     abs_path = str(test_file)
+
+    timings: Dict[str, float] = {
+        "suite_baseline": 0.0,
+        "isolated": 0.0,
+        "seed_sweep": 0.0,
+        "stress_sweep": 0.0,
+        "bisect": 0.0,
+        "ast_analysis": 0.0,
+        "total": 0.0,
+    }
 
     import ast as _ast
     src = test_file.read_text(encoding="utf-8")
@@ -259,6 +328,9 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
         # ----------------------------------------------------------------
         # 1. Suite baseline: 3 runs
         # ----------------------------------------------------------------
+        if progress_callback:
+            progress_callback("suite_baseline", 1, 5)
+        t_phase = time.monotonic()
         with Status("[bold blue]Step 1/5: Suite baseline...", console=console):
             suite_pass_counts: Dict[str, int] = {n: 0 for n in test_names}
             for _ in range(3):
@@ -268,10 +340,14 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                     if r.get(name, False):
                         suite_pass_counts[name] += 1
             passes_in_suite = {n: (suite_pass_counts[n] == 3) for n in test_names}
+        timings["suite_baseline"] = round(time.monotonic() - t_phase, 3)
 
         # ----------------------------------------------------------------
         # 2. Isolated baseline: 3 runs each
         # ----------------------------------------------------------------
+        if progress_callback:
+            progress_callback("isolated", 2, 5)
+        t_phase = time.monotonic()
         with Status("[bold blue]Step 2/5: Isolated baseline...", console=console):
             isolated_fail_counts: Dict[str, int] = {n: 0 for n in test_names}
             for name in test_names:
@@ -281,10 +357,14 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                     if not r.get(name, False):
                         isolated_fail_counts[name] += 1
             fails_isolated = {n: (isolated_fail_counts[n] == 3) for n in test_names}
+        timings["isolated"] = round(time.monotonic() - t_phase, 3)
 
         # ----------------------------------------------------------------
         # 3. Seed sweep: 8 seeds
         # ----------------------------------------------------------------
+        if progress_callback:
+            progress_callback("seed_sweep", 3, 5)
+        t_phase = time.monotonic()
         with Status("[bold blue]Step 3/5: Seed sweep...", console=console):
             seed_fail_counts: Dict[str, int] = {n: 0 for n in test_names}
             for seed in SEEDS:
@@ -294,10 +374,14 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                     if not r.get(name, False):
                         seed_fail_counts[name] += 1
             seed_fail_rate = {n: seed_fail_counts[n] / len(SEEDS) for n in test_names}
+        timings["seed_sweep"] = round(time.monotonic() - t_phase, 3)
 
         # ----------------------------------------------------------------
         # 4. Stress jitter: 6 stress levels
         # ----------------------------------------------------------------
+        if progress_callback:
+            progress_callback("stress_sweep", 4, 5)
+        t_phase = time.monotonic()
         with Status("[bold blue]Step 4/5: Stress jitter...", console=console):
             stress_fail_counts: Dict[str, int] = {n: 0 for n in test_names}
             for i in range(6):
@@ -312,10 +396,14 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                     if not r.get(name, False):
                         stress_fail_counts[name] += 1
             stress_fail_rate = {n: stress_fail_counts[n] / 6 for n in test_names}
+        timings["stress_sweep"] = round(time.monotonic() - t_phase, 3)
 
         # ----------------------------------------------------------------
         # 5. Order/state bisect
         # ----------------------------------------------------------------
+        if progress_callback:
+            progress_callback("bisect", 5, 5)
+        t_phase = time.monotonic()
         with Status("[bold blue]Step 5/5: Order bisect...", console=console):
             culprit_map: Dict[str, Optional[str]] = {}
             for idx, name in enumerate(test_names):
@@ -328,10 +416,12 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                     subprocess_count += max(1, len(predecessors))
                 else:
                     culprit_map[name] = None
+        timings["bisect"] = round(time.monotonic() - t_phase, 3)
 
         # ----------------------------------------------------------------
-        # Verdict assignment
+        # AST analysis & verdict assignment
         # ----------------------------------------------------------------
+        t_phase = time.monotonic()
         reports: List[TestReport] = []
         for name in test_names:
             ps = passes_in_suite[name]
@@ -353,6 +443,8 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                 sweep_fail_rate = 1.0
                 total_runs = 3 + 3 + len(SEEDS) + 6
                 conf = None
+                ci_low, ci_high = 1.0, 1.0
+                cons_runs = None
             elif ps and fi:
                 verdict = "ORDER_DEPENDENT"
                 root_cause = (
@@ -362,24 +454,32 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                 sweep_fail_rate = isolated_fail_counts[name] / 3
                 total_runs = 3 + 3
                 conf = None
+                ci_low, ci_high = wilson_score_interval(isolated_fail_counts[name], 3)
+                cons_runs = None
             elif 0 < sfr < 1.0:
                 verdict = "FLAKY_PRNG"
                 root_cause = "Non-deterministic randomness: different seeds flip pass/fail"
                 sweep_fail_rate = sfr
                 total_runs = len(SEEDS)
                 conf = required_clean_runs(sfr)
+                ci_low, ci_high = wilson_score_interval(seed_fail_counts[name], len(SEEDS))
+                cons_runs = conservative_clean_runs(ci_low)
             elif 0 < stfr < 1.0:
                 verdict = "FLAKY_TIMING"
                 root_cause = "Timing-sensitive: thread scheduling variability flips pass/fail"
                 sweep_fail_rate = stfr
                 total_runs = 6
                 conf = required_clean_runs(stfr)
+                ci_low, ci_high = wilson_score_interval(stress_fail_counts[name], 6)
+                cons_runs = conservative_clean_runs(ci_low)
             else:
                 verdict = "STABLE"
                 root_cause = "No flakiness detected"
                 sweep_fail_rate = 0.0
                 total_runs = 3 + 3 + len(SEEDS) + 6
                 conf = None
+                ci_low, ci_high = 0.0, 0.0
+                cons_runs = None
 
             if verdict == "ORDER_DEPENDENT" and culprit:
                 findings = analyze_test(test_file, culprit)
@@ -395,6 +495,9 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                 runs=total_runs,
                 findings=findings,
                 confidence_runs=conf,
+                ci_low=ci_low,
+                ci_high=ci_high,
+                conservative_clean_runs=cons_runs,
             ))
 
         # Post-pass: POLLUTER promotion
@@ -406,11 +509,15 @@ def diagnose(test_file: str | Path) -> List[TestReport]:
                 r.verdict = "POLLUTER"
                 r.root_cause = "Pollutes shared state depended on by downstream test(s)"
 
-        elapsed = time.monotonic() - t_start
-        # Attach stats to each report so CLI can display them
+        timings["ast_analysis"] = round(time.monotonic() - t_phase, 3)
+        timings["total"] = round(time.monotonic() - t_start, 3)
+
+        # Attach stats to each report
         for r in reports:
-            r._scan_elapsed = elapsed          # type: ignore[attr-defined]
-            r._subprocess_count = subprocess_count  # type: ignore[attr-defined]
+            r._scan_elapsed = timings["total"]
+            r._subprocess_count = subprocess_count
+            r._timings = timings
+            r._executed_file = str(test_file)
 
         return reports
 

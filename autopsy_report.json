@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-11-21T07:07:20.702590+00:00",
-  "test_file": "demo_sick_repo\\test_patient_zero.py",
+  "generated_at": "2026-11-21T15:56:47.321686+00:00",
+  "test_file": "demo_sick_repo/test_patient_zero.py",
   "results": [
     {
       "name": "test_01_setup_cache",
@@ -23,7 +23,10 @@
           "prescription": "Use monkeypatch.setenv() or monkeypatch.setitem() to avoid leaking environment changes to other tests."
         }
       ],
-      "confidence_runs": null
+      "confidence_runs": null,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "conservative_clean_runs": null
     },
     {
       "name": "test_02_order_dependent_consumer",
@@ -46,7 +49,10 @@
           "prescription": "Use monkeypatch.setenv() or monkeypatch.setitem() to avoid leaking environment changes to other tests."
         }
       ],
-      "confidence_runs": null
+      "confidence_runs": null,
+      "ci_low": 0.438,
+      "ci_high": 1.0,
+      "conservative_clean_runs": null
     },
     {
       "name": "test_03_unseeded_ml_threshold",
@@ -63,7 +69,10 @@
           "prescription": "Seeding makes the test reproducible, not correct. Also increase the sample size or assert with a tolerance."
         }
       ],
-      "confidence_runs": 17
+      "confidence_runs": 17,
+      "ci_low": 0.071,
+      "ci_high": 0.591,
+      "conservative_clean_runs": 63
     },
     {
       "name": "test_04_async_race_condition",
@@ -74,19 +83,16 @@
       "runs": 6,
       "findings": [
         {
-          "line": 31,
-          "category": "TIMING_RACE",
-          "code_snippet": "time.sleep(0.005)",
-          "prescription": "Replace time.sleep with thread.join(timeout=2.0) or threading.Event.wait()."
-        },
-        {
           "line": 36,
           "category": "TIMING_RACE",
           "code_snippet": "time.sleep(0.035)",
           "prescription": "Replace time.sleep with thread.join(timeout=2.0) or threading.Event.wait()."
         }
       ],
-      "confidence_runs": 7
+      "confidence_runs": 7,
+      "ci_low": 0.188,
+      "ci_high": 0.812,
+      "conservative_clean_runs": 23
     },
     {
       "name": "test_05_broken_build_control",
@@ -96,7 +102,10 @@
       "sweep_fail_rate": 1.0,
       "runs": 20,
       "findings": [],
-      "confidence_runs": null
+      "confidence_runs": null,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "conservative_clean_runs": null
     }
   ]
 }
